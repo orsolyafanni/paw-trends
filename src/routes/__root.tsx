@@ -45,7 +45,7 @@ export const Route = createRootRoute({
         name: "viewport",
       },
       { content: "#22443a", name: "theme-color" },
-      { title: "Paw Trends · Local storage proof" },
+      { title: "Paw Trends · Today" },
       {
         content:
           "A private dog trigger and wellness tracker stored on this device.",

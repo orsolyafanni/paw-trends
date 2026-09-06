@@ -58,7 +58,7 @@ export default defineConfig({
     tailwindcss(),
     VitePWA({
       registerType: "autoUpdate",
-      includeAssets: ["favicon.svg"],
+      includeAssets: ["favicon.svg", "paw-trends-amstaff.png"],
       manifest: {
         name: "Paw Trends",
         short_name: "Paw Trends",
@@ -79,7 +79,7 @@ export default defineConfig({
       },
       workbox: {
         navigateFallback: "/index.html",
-        globPatterns: ["**/*.{js,css,html,svg,woff2}"],
+        globPatterns: ["**/*.{js,css,html,png,svg,woff2}"],
       },
     }),
   ]),

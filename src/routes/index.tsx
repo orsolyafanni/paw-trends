@@ -1,13 +1,13 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMemo } from "react";
 
-import { PawTrendsPersistenceProof } from "@/features/persistence-proof/paw-trends-persistence-proof";
+import { PawTrendsApp } from "@/features/app/paw-trends-app";
 import { createPawTrendsProbeStore } from "@/persistence/paw-trends-probe-store";
 
 function PawTrendsHome() {
   const store = useMemo(() => createPawTrendsProbeStore(), []);
 
-  return <PawTrendsPersistenceProof store={store} />;
+  return <PawTrendsApp store={store} />;
 }
 
 export const Route = createFileRoute("/")({ component: PawTrendsHome });

@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vite-plus/test";
 
@@ -25,6 +25,12 @@ describe("Paw Trends persistence proof", () => {
       value: () => {},
     });
     render(<PawTrendsPersistenceProof store={store} />);
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: "Save on this iPhone" })
+      ).toBeEnabled();
+    });
 
     await user.type(
       screen.getByLabelText("Sample observation"),

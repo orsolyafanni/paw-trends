@@ -1,9 +1,29 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { createPawTrendsProbeStore } from "./paw-trends-probe-store";
+import {
+  PAW_TRENDS_SEEDED_REUSABLE_LABELS,
+  createPawTrendsProbeStore,
+} from "./paw-trends-probe-store";
 import type { PawTrendsProbeRecord } from "./paw-trends-probe-store";
 
 describe("Paw Trends probe store", () => {
+  it("keeps completed setup after a new app session", async () => {
+    const databaseName = `paw-trends-setup-${crypto.randomUUID()}`;
+    const firstSession = createPawTrendsProbeStore({ databaseName });
+
+    const savedSetup = await firstSession.saveSetupRecord({
+      dataOwnershipAcknowledged: true,
+      dogName: "Mabel",
+      labels: PAW_TRENDS_SEEDED_REUSABLE_LABELS,
+      storageStatus: "granted",
+    });
+    const reopenedSession = createPawTrendsProbeStore({ databaseName });
+
+    await expect(reopenedSession.readSetupRecord()).resolves.toStrictEqual(
+      savedSetup
+    );
+  });
+
   it("saves a sample record and reads it from a new store instance", async () => {
     const databaseName = `paw-trends-save-${crypto.randomUUID()}`;
     const firstSession = createPawTrendsProbeStore({ databaseName });
