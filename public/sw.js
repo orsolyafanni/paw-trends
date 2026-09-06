@@ -1,5 +1,5 @@
 const PAW_TRENDS_SHELL_CACHE = "paw-trends-shell-v2";
-const PAW_TRENDS_SHELL_URL = "/_shell.html";
+const PAW_TRENDS_SHELL_URL = "/index.html";
 const PAW_TRENDS_CORE_URLS = ["/favicon.svg", "/manifest.webmanifest"];
 
 async function cachePawTrendsUrl(cache, url) {

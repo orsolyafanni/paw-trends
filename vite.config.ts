@@ -50,7 +50,9 @@ export default defineConfig({
     },
   },
   plugins: lazyPlugins(() => [
-    tanstackStart({ spa: { enabled: true } }),
+    tanstackStart({
+      spa: { enabled: true, prerender: { outputPath: "/index" } },
+    }),
     sites(),
     react(),
     tailwindcss(),
@@ -76,7 +78,7 @@ export default defineConfig({
         ],
       },
       workbox: {
-        navigateFallback: "/_shell.html",
+        navigateFallback: "/index.html",
         globPatterns: ["**/*.{js,css,html,svg,woff2}"],
       },
     }),
