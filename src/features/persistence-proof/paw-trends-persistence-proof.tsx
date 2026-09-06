@@ -324,8 +324,8 @@ export function PawTrendsPersistenceProof({
       <footer className="paw-footer">
         <ShieldCheck aria-hidden="true" />
         <p>
-          This is a technical proof, not the full tracker. Nothing leaves this
-          device unless you export the backup yourself.
+          Storage proof version 2 is installed. Nothing leaves this device
+          unless you export the backup yourself.
         </p>
       </footer>
     </main>
