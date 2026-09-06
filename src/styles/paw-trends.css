@@ -568,6 +568,114 @@ label {
   box-shadow: 0 13px 28px rgb(33 74 60 / 20%);
 }
 
+.paw-inline-editor {
+  display: grid;
+  gap: 16px;
+  margin-top: 18px;
+  padding: 20px;
+  border: 1px solid var(--border);
+  border-radius: 15px;
+  background: var(--card);
+  box-shadow: 0 14px 34px rgb(46 39 30 / 8%);
+}
+
+.paw-inline-editor-heading {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+}
+
+.paw-inline-editor-heading span,
+.paw-entry-card > div > span {
+  color: var(--rust);
+  font-size: 0.75rem;
+  font-weight: 800;
+}
+
+.paw-inline-editor-heading h2 {
+  margin-top: 2px;
+  font-family: var(--font-heading);
+  font-size: 1.5rem;
+}
+
+.paw-inline-editor-heading button,
+.paw-entry-actions button,
+.paw-check-in-entry > span:last-child {
+  border: 0;
+  color: var(--primary);
+  background: transparent;
+  font-size: 0.8rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.paw-inline-editor > label {
+  display: grid;
+  gap: 6px;
+  color: var(--muted-foreground);
+  font-size: 0.85rem;
+  font-weight: 750;
+}
+
+.paw-inline-editor > label > span {
+  font-weight: 500;
+}
+
+.paw-inline-editor select,
+.paw-inline-editor input[type="date"],
+.paw-inline-editor input[type="datetime-local"],
+.paw-inline-editor textarea {
+  width: 100%;
+  min-height: 48px;
+  padding: 10px 12px;
+  border: 1px solid var(--input);
+  border-radius: 10px;
+  color: var(--foreground);
+  background: var(--background);
+}
+
+.paw-inline-editor textarea {
+  min-height: 84px;
+  resize: vertical;
+}
+
+.paw-inline-editor > [data-slot="button"] {
+  width: 100%;
+}
+
+.paw-symptom-picker {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.paw-symptom-picker legend {
+  margin-bottom: 8px;
+  font-size: 0.85rem;
+  font-weight: 800;
+}
+
+.paw-symptom-picker label {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.paw-symptom-picker input {
+  width: 20px;
+  height: 20px;
+  accent-color: var(--primary);
+}
+
+.paw-symptom-picker p {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: 0.84rem;
+  line-height: 1.5;
+}
+
 .paw-today-entries {
   margin-top: 38px;
 }
@@ -619,6 +727,97 @@ label {
   color: var(--muted-foreground);
   font-size: 0.84rem;
   line-height: 1.55;
+}
+
+.paw-entry-list {
+  display: grid;
+  gap: 10px;
+}
+
+.paw-entry-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 13px;
+  align-items: start;
+  width: 100%;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  color: var(--foreground);
+  background: var(--card);
+  text-align: left;
+}
+
+.paw-entry-card h3 {
+  margin: 2px 0 0;
+  font-family: var(--font-heading);
+  font-size: 1.2rem;
+}
+
+.paw-entry-card p {
+  margin: 4px 0 0;
+  color: var(--muted-foreground);
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
+.paw-entry-subject {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  border-radius: 50%;
+  color: var(--primary);
+  background: var(--sage);
+}
+
+.paw-entry-subject.is-owner {
+  color: var(--rust);
+  background: var(--secondary);
+}
+
+.paw-entry-subject svg,
+.paw-check-in-entry > svg {
+  width: 18px;
+  height: 18px;
+}
+
+.paw-entry-actions {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+}
+
+.paw-entry-actions button {
+  min-width: 36px;
+  min-height: 36px;
+  padding: 6px;
+  border-radius: 8px;
+}
+
+.paw-entry-actions button:hover {
+  background: var(--muted);
+}
+
+.paw-entry-actions svg {
+  width: 16px;
+  height: 16px;
+  color: var(--destructive);
+}
+
+.paw-check-in-entry {
+  align-items: center;
+  cursor: pointer;
+}
+
+.paw-check-in-entry > svg {
+  margin: 9px;
+  color: var(--primary);
+}
+
+.paw-check-in-entry strong {
+  display: block;
+  margin-bottom: 3px;
 }
 
 .paw-bottom-navigation {
