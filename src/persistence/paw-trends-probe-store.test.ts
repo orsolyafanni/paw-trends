@@ -1,0 +1,39 @@
+import { describe, expect, it } from "vite-plus/test";
+
+import { createPawTrendsProbeStore } from "./paw-trends-probe-store";
+import type { PawTrendsProbeRecord } from "./paw-trends-probe-store";
+
+describe("Paw Trends probe store", () => {
+  it("saves a sample record and reads it from a new store instance", async () => {
+    const databaseName = `paw-trends-save-${crypto.randomUUID()}`;
+    const firstSession = createPawTrendsProbeStore({ databaseName });
+
+    const savedRecord = await firstSession.saveSampleRecord(
+      "Tense after seeing a cat near Lake11."
+    );
+    const reopenedSession = createPawTrendsProbeStore({ databaseName });
+
+    await expect(reopenedSession.readSampleRecord()).resolves.toStrictEqual(
+      savedRecord
+    );
+  });
+
+  it("replaces the complete sample record during restore", async () => {
+    const store = createPawTrendsProbeStore({
+      databaseName: `paw-trends-replace-${crypto.randomUUID()}`,
+    });
+    const restoredRecord: PawTrendsProbeRecord = {
+      id: "owner-sample",
+      note: "Restored observation",
+      savedAt: "2026-09-06T08:30:00.000Z",
+      schemaVersion: 1,
+    };
+
+    await store.saveSampleRecord("This should be replaced");
+    await store.replaceSampleRecord(restoredRecord);
+
+    await expect(store.readSampleRecord()).resolves.toStrictEqual(
+      restoredRecord
+    );
+  });
+});
