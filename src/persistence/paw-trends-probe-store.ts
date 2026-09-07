@@ -124,10 +124,18 @@ export interface PawTrendsTraining {
 
 export type PawTrendsDogActivity = PawTrendsTraining | PawTrendsWalk;
 
+export type PawTrendsHistoryRecord =
+  | { kind: "check-in"; record: PawTrendsDailyCheckIn }
+  | { kind: "mood"; record: PawTrendsMoodEntry }
+  | { kind: "training"; record: PawTrendsTraining }
+  | { kind: "walk"; record: PawTrendsWalk };
+
 export type PawTrendsWalkDraft = Omit<
   PawTrendsWalk,
   "createdAt" | "id" | "kind" | "updatedAt"
-> & { id?: string };
+> & {
+  id?: string;
+};
 
 export type PawTrendsTrainingDraft = Omit<
   PawTrendsTraining,
@@ -146,6 +154,8 @@ export interface PawTrendsProbeStore {
   deleteWalk: (id: string) => Promise<void>;
   deleteTraining: (id: string) => Promise<void>;
   deleteMoodEntry: (id: string) => Promise<void>;
+  deleteHistoryRecord: (entry: PawTrendsHistoryRecord) => Promise<void>;
+  listHistoryRecords: () => Promise<PawTrendsHistoryRecord[]>;
   listMoodEntriesForDate: (localDate: string) => Promise<PawTrendsMoodEntry[]>;
   listRecentTriggerLabels: (limit: number) => Promise<string[]>;
   listDogActivitiesForDate: (
@@ -166,6 +176,11 @@ export interface PawTrendsProbeStore {
     localDate: string,
     ownerSymptoms: string[]
   ) => Promise<PawTrendsDailyCheckIn>;
+  moveDailyCheckIn: (
+    originalLocalDate: string,
+    nextLocalDate: string,
+    ownerSymptoms: string[]
+  ) => Promise<PawTrendsDailyCheckIn>;
   saveMoodEntry: (
     entry: Omit<PawTrendsMoodEntry, "id"> & { id?: string }
   ) => Promise<PawTrendsMoodEntry>;
@@ -178,6 +193,7 @@ export interface PawTrendsProbeStore {
     training: PawTrendsTrainingDraft
   ) => Promise<PawTrendsTraining>;
   saveWalk: (walk: PawTrendsWalkDraft) => Promise<PawTrendsWalk>;
+  restoreHistoryRecord: (entry: PawTrendsHistoryRecord) => Promise<void>;
 }
 
 const PAW_TRENDS_SAMPLE_RECORD_ID: PawTrendsProbeRecordId = "owner-sample";
@@ -347,6 +363,35 @@ export const createPawTrendsProbeStore = (_options?: {
     deleteMoodEntry: async (id) => {
       await database.moodEntries.delete(id);
     },
+    deleteHistoryRecord: async (entry) => {
+      if (entry.kind === "check-in") {
+        await database.dailyCheckIns.delete(entry.record.localDate);
+      } else if (entry.kind === "mood") {
+        await database.moodEntries.delete(entry.record.id);
+      } else {
+        await database.dogActivities.delete(entry.record.id);
+      }
+    },
+    listHistoryRecords: async () => {
+      const [dailyCheckIns, moodEntries, dogActivities] = await Promise.all([
+        database.dailyCheckIns.toArray(),
+        database.moodEntries.toArray(),
+        database.dogActivities.toArray(),
+      ]);
+      return [
+        ...dailyCheckIns.map((record) => ({
+          kind: "check-in" as const,
+          record,
+        })),
+        ...moodEntries.map((record) => ({ kind: "mood" as const, record })),
+        ...dogActivities.map(
+          (record): PawTrendsHistoryRecord =>
+            record.kind === "walk"
+              ? { kind: "walk", record }
+              : { kind: "training", record }
+        ),
+      ];
+    },
     listMoodEntriesForDate: async (localDate) =>
       await database.moodEntries
         .where("localDate")
@@ -434,6 +479,33 @@ export const createPawTrendsProbeStore = (_options?: {
       };
       await database.dailyCheckIns.put(checkIn);
       return checkIn;
+    },
+    moveDailyCheckIn: async (
+      originalLocalDate,
+      nextLocalDate,
+      ownerSymptoms
+    ) => {
+      const existing = await database.dailyCheckIns.get(originalLocalDate);
+      if (!existing) {
+        throw new Error("Daily Check-in could not be found for editing.");
+      }
+      const conflicting = await database.dailyCheckIns.get(nextLocalDate);
+      if (conflicting && nextLocalDate !== originalLocalDate) {
+        throw new Error("Daily Check-in already exists for this date.");
+      }
+      const updatedCheckIn: PawTrendsDailyCheckIn = {
+        completedAt: existing.completedAt,
+        localDate: nextLocalDate,
+        ownerSymptoms: [...new Set(ownerSymptoms)].toSorted(),
+        updatedAt: new Date().toISOString(),
+      };
+      await database.transaction("rw", database.dailyCheckIns, async () => {
+        if (originalLocalDate !== nextLocalDate) {
+          await database.dailyCheckIns.delete(originalLocalDate);
+        }
+        await database.dailyCheckIns.put(updatedCheckIn);
+      });
+      return updatedCheckIn;
     },
     saveMoodEntry: async (entry) => {
       const duplicate = await database.moodEntries
@@ -640,6 +712,15 @@ export const createPawTrendsProbeStore = (_options?: {
       };
       await database.dogActivities.put(savedWalk);
       return savedWalk;
+    },
+    restoreHistoryRecord: async (entry) => {
+      if (entry.kind === "check-in") {
+        await database.dailyCheckIns.put(entry.record);
+      } else if (entry.kind === "mood") {
+        await database.moodEntries.put(entry.record);
+      } else {
+        await database.dogActivities.put(entry.record);
+      }
     },
   };
 };

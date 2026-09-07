@@ -4,7 +4,6 @@ import type { Activity } from "lucide-react";
 import {
   ChevronRight,
   CircleUserRound,
-  Clock3,
   HeartPulse,
   History,
   Home,
@@ -22,6 +21,7 @@ import { useEffect, useId, useState } from "react";
 import type { SyntheticEvent } from "react";
 
 import { Button } from "@/components/ui/button";
+import { PawTrendsHistory } from "@/features/history/paw-trends-history";
 import type {
   PawTrendsDailyCheckIn,
   PawTrendsDogActivity,
@@ -68,15 +68,7 @@ const PAW_TRENDS_NAVIGATION: readonly {
   { icon: Settings, label: "Settings", screen: "settings" },
 ];
 
-const EMPTY_SCREEN_COPY: Record<
-  Exclude<PawTrendsAppScreen, "settings" | "today">,
-  { description: string; title: string }
-> = {
-  history: {
-    description:
-      "Walks, Training, moods, and Daily Check-ins will collect here by day.",
-    title: "Your history starts with the first entry.",
-  },
+const EMPTY_SCREEN_COPY = {
   patterns: {
     description:
       "Paw Trends will show data-readiness counts before any Associations qualify.",
@@ -405,10 +397,14 @@ function PawTrendsApplicationShell({
   let screenContent;
   if (activeScreen === "today") {
     screenContent = <PawTrendsToday setupRecord={setupRecord} store={store} />;
+  } else if (activeScreen === "history") {
+    screenContent = (
+      <PawTrendsHistory setupRecord={setupRecord} store={store} />
+    );
   } else if (activeScreen === "settings") {
     screenContent = <PawTrendsSettings setupRecord={setupRecord} />;
   } else {
-    screenContent = <PawTrendsEmptyScreen screen={activeScreen} />;
+    screenContent = <PawTrendsEmptyScreen />;
   }
 
   return (
@@ -1140,14 +1136,8 @@ function PawTrendsMoodEntryCard({
   );
 }
 
-function PawTrendsEmptyScreen({
-  screen,
-}: {
-  screen: Exclude<PawTrendsAppScreen, "settings" | "today">;
-}) {
-  const copy = EMPTY_SCREEN_COPY[screen];
-  const title = screen === "history" ? "History" : "Patterns";
-  const Icon = screen === "history" ? Clock3 : Sparkles;
+function PawTrendsEmptyScreen() {
+  const copy = EMPTY_SCREEN_COPY.patterns;
 
   return (
     <main className="paw-app-content paw-secondary-screen">
@@ -1158,10 +1148,10 @@ function PawTrendsEmptyScreen({
           </span>
           <span>Paw Trends</span>
         </div>
-        <h1>{title}</h1>
+        <h1>Patterns</h1>
       </header>
       <section className="paw-secondary-empty">
-        <Icon aria-hidden="true" />
+        <Sparkles aria-hidden="true" />
         <h2>{copy.title}</h2>
         <p>{copy.description}</p>
       </section>
