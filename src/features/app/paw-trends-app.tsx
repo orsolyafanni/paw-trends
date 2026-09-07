@@ -30,6 +30,7 @@ import type {
   PawTrendsReusableLabelCategory,
   PawTrendsReusableLabels,
   PawTrendsSetupRecord,
+  PawTrendsWalk,
 } from "@/persistence/paw-trends-probe-store";
 import {
   getPawTrendsLocalDate,
@@ -39,6 +40,8 @@ import {
   PAW_TRENDS_REUSABLE_LABEL_CATEGORIES,
   PAW_TRENDS_SEEDED_REUSABLE_LABELS,
 } from "@/persistence/paw-trends-probe-store";
+import { PawTrendsWalkEditor } from "@/features/walks/paw-trends-walk-editor";
+import { PawTrendsWalkEntryCard } from "@/features/walks/paw-trends-walk-entry-card";
 import {
   registerPawTrendsPwa,
   requestPawTrendsPersistentStorage,
@@ -430,6 +433,7 @@ function PawTrendsApplicationShell({
 type PawTrendsTodayEditor =
   | { kind: "check-in" }
   | { entry?: PawTrendsMoodEntry; kind: "mood"; subject: PawTrendsMoodSubject }
+  | { kind: "walk"; walk?: PawTrendsWalk }
   | null;
 
 const formatDateTimeLocalValue = (date: Date): string => {
@@ -439,15 +443,7 @@ const formatDateTimeLocalValue = (date: Date): string => {
     .slice(0, 16);
 };
 
-const readPawTrendsTodayState = async (
-  store: PawTrendsProbeStore,
-  localDate: string
-): Promise<[PawTrendsMoodEntry[], PawTrendsDailyCheckIn | null]> =>
-  await Promise.all([
-    store.listMoodEntriesForDate(localDate),
-    store.readDailyCheckIn(localDate),
-  ]);
-
+// oxlint-disable-next-line eslint/complexity -- Today composes three editors and their timeline entries.
 function PawTrendsToday({
   setupRecord,
   store,
@@ -457,27 +453,43 @@ function PawTrendsToday({
 }) {
   const now = new Date();
   const localDate = getPawTrendsLocalDate(now);
+  const [currentSetup, setCurrentSetup] = useState(setupRecord);
   const [moodEntries, setMoodEntries] = useState<PawTrendsMoodEntry[]>([]);
+  const [walks, setWalks] = useState<PawTrendsWalk[]>([]);
+  const [recentTriggers, setRecentTriggers] = useState<string[]>([]);
   const [dailyCheckIn, setDailyCheckIn] =
     useState<PawTrendsDailyCheckIn | null>(null);
   const [editor, setEditor] = useState<PawTrendsTodayEditor>(null);
 
   const loadTodayState = async () => {
-    const [entries, checkIn] = await readPawTrendsTodayState(store, localDate);
+    const [entries, checkIn, savedWalks, savedRecentTriggers] =
+      await Promise.all([
+        store.listMoodEntriesForDate(localDate),
+        store.readDailyCheckIn(localDate),
+        store.listWalksForDate(localDate),
+        store.listRecentTriggerLabels(3),
+      ]);
     setMoodEntries(entries);
     setDailyCheckIn(checkIn);
+    setWalks(savedWalks);
+    setRecentTriggers(savedRecentTriggers);
   };
 
   useEffect(() => {
     let isCurrent = true;
     const loadInitialTodayState = async () => {
-      const [entries, checkIn] = await readPawTrendsTodayState(
-        store,
-        localDate
-      );
+      const [entries, checkIn, savedWalks, savedRecentTriggers] =
+        await Promise.all([
+          store.listMoodEntriesForDate(localDate),
+          store.readDailyCheckIn(localDate),
+          store.listWalksForDate(localDate),
+          store.listRecentTriggerLabels(3),
+        ]);
       if (isCurrent) {
         setMoodEntries(entries);
         setDailyCheckIn(checkIn);
+        setWalks(savedWalks);
+        setRecentTriggers(savedRecentTriggers);
       }
     };
     void loadInitialTodayState();
@@ -498,7 +510,7 @@ function PawTrendsToday({
     month: "long",
     weekday: "long",
   }).format(now);
-  const entryCount = moodEntries.length + (dailyCheckIn ? 1 : 0);
+  const entryCount = moodEntries.length + walks.length + (dailyCheckIn ? 1 : 0);
   let dailyCheckInStatus = "Not completed";
   if (dailyCheckIn) {
     dailyCheckInStatus =
@@ -511,6 +523,11 @@ function PawTrendsToday({
       entry,
       kind: "mood" as const,
       timestamp: entry.recordedAt,
+    })),
+    ...walks.map((walk) => ({
+      entry: walk,
+      kind: "walk" as const,
+      timestamp: walk.startedAt,
     })),
     ...(dailyCheckIn
       ? [
@@ -533,13 +550,13 @@ function PawTrendsToday({
           <span>Paw Trends</span>
         </div>
         <p>{todayLabel}</p>
-        <h1>Today with {setupRecord.dogName}</h1>
+        <h1>Today with {currentSetup.dogName}</h1>
       </header>
 
       <section className="paw-status-sheet" aria-label="Today's status">
         <PawTrendsStatusRow
           icon={HeartPulse}
-          title={`${setupRecord.dogName}'s mood`}
+          title={`${currentSetup.dogName}'s mood`}
           value={dogMood?.mood ?? "No Dog Mood logged"}
           action={dogMood ? "Change mood" : "Add mood"}
           onAction={() => {
@@ -583,7 +600,7 @@ function PawTrendsToday({
         <PawTrendsCheckInEditor
           initialCheckIn={dailyCheckIn}
           initialDate={localDate}
-          ownerSymptoms={setupRecord.labels["Owner Symptom"]}
+          ownerSymptoms={currentSetup.labels["Owner Symptom"]}
           onCancel={() => {
             setEditor(null);
           }}
@@ -595,7 +612,31 @@ function PawTrendsToday({
         />
       ) : null}
 
-      <Button className="paw-log-activity" size="lg">
+      {editor?.kind === "walk" ? (
+        <PawTrendsWalkEditor
+          {...(editor.walk === undefined ? {} : { initialWalk: editor.walk })}
+          labels={currentSetup.labels}
+          recentTriggers={recentTriggers}
+          store={store}
+          onCancel={() => {
+            setEditor(null);
+          }}
+          onLabelsChanged={setCurrentSetup}
+          onSaved={async () => {
+            await loadTodayState();
+            setEditor(null);
+          }}
+        />
+      ) : null}
+
+      <Button
+        className="paw-log-activity"
+        size="lg"
+        type="button"
+        onClick={() => {
+          setEditor({ kind: "walk" });
+        }}
+      >
         <Plus data-icon="inline-start" aria-hidden="true" />
         Log activity
       </Button>
@@ -640,6 +681,19 @@ function PawTrendsToday({
                       });
                     }}
                     store={store}
+                  />
+                );
+              }
+              if (timelineEntry.kind === "walk") {
+                return (
+                  <PawTrendsWalkEntryCard
+                    key={timelineEntry.entry.id}
+                    walk={timelineEntry.entry}
+                    store={store}
+                    onDeleted={loadTodayState}
+                    onEdit={() => {
+                      setEditor({ kind: "walk", walk: timelineEntry.entry });
+                    }}
                   />
                 );
               }
@@ -707,7 +761,7 @@ function PawTrendsMoodEditor({
   onSaved,
   store,
 }: {
-  editor: Exclude<PawTrendsTodayEditor, { kind: "check-in" } | null>;
+  editor: Extract<PawTrendsTodayEditor, { kind: "mood" }>;
   onCancel: () => void;
   onSaved: () => Promise<void>;
   store: PawTrendsProbeStore;
