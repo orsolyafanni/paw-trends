@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vite-plus/test";
 
@@ -52,7 +52,9 @@ describe("Paw Trends Walk editor", () => {
     await user.selectOptions(secondSeverityField, "5");
     await user.click(screen.getByRole("button", { name: "Save Walk" }));
 
-    expect(onSaved).toHaveBeenCalledOnce();
+    await waitFor(() => {
+      expect(onSaved).toHaveBeenCalledOnce();
+    });
     const localDate = getPawTrendsLocalDate(new Date());
     const [savedWalk] = await store.listWalksForDate(localDate);
     if (savedWalk === undefined) {

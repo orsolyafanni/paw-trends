@@ -568,6 +568,23 @@ label {
   box-shadow: 0 13px 28px rgb(33 74 60 / 20%);
 }
 
+.paw-activity-choice {
+  display: grid;
+  gap: 18px;
+  margin-top: 18px;
+  padding: 20px;
+  border: 1px solid var(--border);
+  border-radius: 15px;
+  background: var(--card);
+  box-shadow: 0 14px 34px rgb(46 39 30 / 8%);
+}
+
+.paw-activity-choice > div:last-child {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
 .paw-inline-editor {
   display: grid;
   gap: 16px;
@@ -654,6 +671,24 @@ label {
   display: grid;
   grid-template-columns: 1fr 1fr 1.35fr;
   gap: 10px;
+}
+
+.paw-training-time-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.paw-training-time-grid label {
+  display: grid;
+  gap: 6px;
+  color: var(--muted-foreground);
+  font-size: 0.85rem;
+  font-weight: 750;
+}
+
+.paw-training-symptom-picker {
+  padding-top: 3px;
 }
 
 .paw-walk-time-grid label {
@@ -918,6 +953,11 @@ label {
   border-radius: 50%;
   color: var(--primary);
   background: var(--sage);
+}
+
+.paw-entry-subject.is-training {
+  color: var(--rust);
+  background: var(--secondary);
 }
 
 .paw-entry-subject.is-owner {

@@ -102,12 +102,37 @@ export interface PawTrendsWalk {
   dogSymptoms: string[];
   durationMinutes: number;
   id: string;
+  kind: "walk";
   localDate: string;
   place: string;
   startedAt: string;
   triggerEncounters: PawTrendsTriggerEncounter[];
   updatedAt: string;
 }
+
+export interface PawTrendsTraining {
+  activityMood: PawTrendsDogMood;
+  createdAt: string;
+  dogSymptoms: string[];
+  id: string;
+  kind: "training";
+  localDate: string;
+  startedAt: string;
+  trainingType: string;
+  updatedAt: string;
+}
+
+export type PawTrendsDogActivity = PawTrendsTraining | PawTrendsWalk;
+
+export type PawTrendsWalkDraft = Omit<
+  PawTrendsWalk,
+  "createdAt" | "id" | "kind" | "updatedAt"
+> & { id?: string };
+
+export type PawTrendsTrainingDraft = Omit<
+  PawTrendsTraining,
+  "createdAt" | "id" | "kind" | "updatedAt"
+> & { id?: string };
 
 export interface PawTrendsWalkReactionSummary {
   averageSeverity: number;
@@ -117,10 +142,16 @@ export interface PawTrendsWalkReactionSummary {
 }
 
 export interface PawTrendsProbeStore {
+  deleteDogActivity: (id: string) => Promise<void>;
   deleteWalk: (id: string) => Promise<void>;
+  deleteTraining: (id: string) => Promise<void>;
   deleteMoodEntry: (id: string) => Promise<void>;
   listMoodEntriesForDate: (localDate: string) => Promise<PawTrendsMoodEntry[]>;
   listRecentTriggerLabels: (limit: number) => Promise<string[]>;
+  listDogActivitiesForDate: (
+    localDate: string
+  ) => Promise<PawTrendsDogActivity[]>;
+  listTrainingsForDate: (localDate: string) => Promise<PawTrendsTraining[]>;
   listWalksForDate: (localDate: string) => Promise<PawTrendsWalk[]>;
   readDailyCheckIn: (
     localDate: string
@@ -143,11 +174,10 @@ export interface PawTrendsProbeStore {
     label: string
   ) => Promise<PawTrendsSetupRecord>;
   saveSampleRecord: (note: string) => Promise<PawTrendsProbeRecord>;
-  saveWalk: (
-    walk: Omit<PawTrendsWalk, "createdAt" | "id" | "updatedAt"> & {
-      id?: string;
-    }
-  ) => Promise<PawTrendsWalk>;
+  saveTraining: (
+    training: PawTrendsTrainingDraft
+  ) => Promise<PawTrendsTraining>;
+  saveWalk: (walk: PawTrendsWalkDraft) => Promise<PawTrendsWalk>;
 }
 
 const PAW_TRENDS_SAMPLE_RECORD_ID: PawTrendsProbeRecordId = "owner-sample";
@@ -155,6 +185,7 @@ const PAW_TRENDS_SETUP_RECORD_ID: PawTrendsSetupRecord["id"] = "primary-owner";
 
 class PawTrendsProbeDatabase extends Dexie {
   dailyCheckIns!: Table<PawTrendsDailyCheckIn, string>;
+  dogActivities!: Table<PawTrendsDogActivity, string>;
   moodEntries!: Table<PawTrendsMoodEntry, string>;
   records!: Table<PawTrendsProbeRecord, PawTrendsProbeRecordId>;
   setup!: Table<PawTrendsSetupRecord, PawTrendsSetupRecord["id"]>;
@@ -177,6 +208,28 @@ class PawTrendsProbeDatabase extends Dexie {
       setup: "id",
       walks: "id, localDate, startedAt",
     });
+    this.version(5)
+      .stores({
+        dailyCheckIns: "localDate",
+        dogActivities: "id, localDate, startedAt, kind",
+        moodEntries: "id, localDate, [subject+recordedAt]",
+        records: "id",
+        setup: "id",
+        walks: null,
+      })
+      .upgrade(async (transaction) => {
+        const existingWalks = await transaction
+          .table<PawTrendsWalk>("walks")
+          .toArray();
+        if (existingWalks.length > 0) {
+          await transaction.table("dogActivities").bulkAdd(
+            existingWalks.map((walk) => ({
+              ...walk,
+              kind: "walk" as const,
+            }))
+          );
+        }
+      });
   }
 }
 
@@ -215,10 +268,24 @@ export const calculatePawTrendsWalkReactionSummary = (
 const normalizePawTrendsWalkLabels = (labels: readonly string[]): string[] =>
   [...new Set(labels.map((label) => label.trim()).filter(Boolean))].toSorted();
 
+const rejectPawTrendsActivityFields = (
+  activity: object,
+  activityName: "Training" | "Walk",
+  forbiddenFields: readonly string[]
+) => {
+  const presentFields = forbiddenFields.filter((field) => field in activity);
+  if (presentFields.length > 0) {
+    throw new Error(
+      `${activityName} cannot include ${activityName === "Training" ? "Walk" : "Training"}-only fields: ${presentFields.join(", ")}.`
+    );
+  }
+};
+
 const requireConfiguredPawTrendsLabel = (
   configuredLabels: readonly string[],
   label: string,
-  fieldName: string
+  fieldName: string,
+  activityName = "Walk"
 ) => {
   if (
     !configuredLabels.some(
@@ -226,7 +293,7 @@ const requireConfiguredPawTrendsLabel = (
         configured.toLocaleLowerCase() === label.toLocaleLowerCase()
     )
   ) {
-    throw new Error(`Walk ${fieldName} must use a saved label.`);
+    throw new Error(`${activityName} ${fieldName} must use a saved label.`);
   }
 };
 
@@ -268,8 +335,14 @@ export const createPawTrendsProbeStore = (_options?: {
   );
 
   return {
+    deleteDogActivity: async (id) => {
+      await database.dogActivities.delete(id);
+    },
+    deleteTraining: async (id) => {
+      await database.dogActivities.delete(id);
+    },
     deleteWalk: async (id) => {
-      await database.walks.delete(id);
+      await database.dogActivities.delete(id);
     },
     deleteMoodEntry: async (id) => {
       await database.moodEntries.delete(id);
@@ -280,8 +353,15 @@ export const createPawTrendsProbeStore = (_options?: {
         .equals(localDate)
         .sortBy("recordedAt"),
     listRecentTriggerLabels: async (limit) => {
-      const savedWalks = await database.walks.orderBy("startedAt").toArray();
-      const walks = savedWalks.toReversed();
+      const savedActivities = await database.dogActivities
+        .where("kind")
+        .equals("walk")
+        .sortBy("startedAt");
+      const walks = savedActivities
+        .filter(
+          (activity): activity is PawTrendsWalk => activity.kind === "walk"
+        )
+        .toReversed();
       const recent: string[] = [];
       for (const walk of walks) {
         for (const encounter of walk.triggerEncounters.toReversed()) {
@@ -295,11 +375,30 @@ export const createPawTrendsProbeStore = (_options?: {
       }
       return recent;
     },
-    listWalksForDate: async (localDate) =>
-      await database.walks
+    listDogActivitiesForDate: async (localDate) =>
+      await database.dogActivities
         .where("localDate")
         .equals(localDate)
         .sortBy("startedAt"),
+    listTrainingsForDate: async (localDate) => {
+      const activities = await database.dogActivities
+        .where("localDate")
+        .equals(localDate)
+        .sortBy("startedAt");
+      return activities.filter(
+        (activity): activity is PawTrendsTraining =>
+          activity.kind === "training"
+      );
+    },
+    listWalksForDate: async (localDate) => {
+      const activities = await database.dogActivities
+        .where("localDate")
+        .equals(localDate)
+        .sortBy("startedAt");
+      return activities.filter(
+        (activity): activity is PawTrendsWalk => activity.kind === "walk"
+      );
+    },
     readDailyCheckIn: async (localDate) =>
       (await database.dailyCheckIns.get(localDate)) ?? null,
     readSetupRecord: async () =>
@@ -392,7 +491,69 @@ export const createPawTrendsProbeStore = (_options?: {
       await database.records.put(record);
       return record;
     },
+    saveTraining: async (training) => {
+      rejectPawTrendsActivityFields(training, "Training", [
+        "company",
+        "durationMinutes",
+        "place",
+        "triggerEncounters",
+      ]);
+      const setup = await database.setup.get(PAW_TRENDS_SETUP_RECORD_ID);
+      if (!setup) {
+        throw new Error("Training cannot be saved before setup.");
+      }
+      const startedAt = new Date(training.startedAt);
+      if (
+        Number.isNaN(startedAt.getTime()) ||
+        getPawTrendsLocalDate(startedAt) !== training.localDate
+      ) {
+        throw new Error("Training date and time must be valid and agree.");
+      }
+      if (!PAW_TRENDS_DOG_MOODS.includes(training.activityMood)) {
+        throw new Error("Training requires an Activity Mood confirmation.");
+      }
+      const trainingType = training.trainingType.trim();
+      if (!trainingType) {
+        throw new Error("Training requires one Training Type.");
+      }
+      requireConfiguredPawTrendsLabel(
+        setup.labels["Training Type"],
+        trainingType,
+        "Training Type",
+        "Training"
+      );
+      const dogSymptoms = normalizePawTrendsWalkLabels(training.dogSymptoms);
+      for (const label of dogSymptoms) {
+        requireConfiguredPawTrendsLabel(
+          setup.labels["Dog Symptom"],
+          label,
+          "Dog Symptom",
+          "Training"
+        );
+      }
+      const existing =
+        training.id === undefined
+          ? undefined
+          : await database.dogActivities.get(training.id);
+      if (existing !== undefined && existing.kind !== "training") {
+        throw new Error("Training cannot replace a saved Walk.");
+      }
+      const now = new Date().toISOString();
+      const savedTraining: PawTrendsTraining = {
+        ...training,
+        createdAt: existing?.createdAt ?? now,
+        dogSymptoms,
+        id: training.id ?? crypto.randomUUID(),
+        kind: "training",
+        trainingType,
+        updatedAt: now,
+      };
+      await database.dogActivities.put(savedTraining);
+      return savedTraining;
+    },
+    // oxlint-disable-next-line eslint/complexity -- Validation keeps corrupt Walk data out of IndexedDB.
     saveWalk: async (walk) => {
+      rejectPawTrendsActivityFields(walk, "Walk", ["trainingType"]);
       const setup = await database.setup.get(PAW_TRENDS_SETUP_RECORD_ID);
       if (!setup) {
         throw new Error("Walk cannot be saved before setup.");
@@ -456,7 +617,12 @@ export const createPawTrendsProbeStore = (_options?: {
         }
       }
       const existing =
-        walk.id === undefined ? undefined : await database.walks.get(walk.id);
+        walk.id === undefined
+          ? undefined
+          : await database.dogActivities.get(walk.id);
+      if (existing !== undefined && existing.kind !== "walk") {
+        throw new Error("Walk cannot replace a saved Training.");
+      }
       const now = new Date().toISOString();
       const savedWalk: PawTrendsWalk = {
         ...walk,
@@ -464,6 +630,7 @@ export const createPawTrendsProbeStore = (_options?: {
         createdAt: existing?.createdAt ?? now,
         dogSymptoms,
         id: walk.id ?? crypto.randomUUID(),
+        kind: "walk",
         place,
         triggerEncounters: walk.triggerEncounters.map((encounter) => ({
           ...encounter,
@@ -471,7 +638,7 @@ export const createPawTrendsProbeStore = (_options?: {
         })),
         updatedAt: now,
       };
-      await database.walks.put(savedWalk);
+      await database.dogActivities.put(savedWalk);
       return savedWalk;
     },
   };

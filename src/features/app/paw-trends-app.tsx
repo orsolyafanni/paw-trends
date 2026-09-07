@@ -24,12 +24,14 @@ import type { SyntheticEvent } from "react";
 import { Button } from "@/components/ui/button";
 import type {
   PawTrendsDailyCheckIn,
+  PawTrendsDogActivity,
   PawTrendsMoodEntry,
   PawTrendsMoodSubject,
   PawTrendsProbeStore,
   PawTrendsReusableLabelCategory,
   PawTrendsReusableLabels,
   PawTrendsSetupRecord,
+  PawTrendsTraining,
   PawTrendsWalk,
 } from "@/persistence/paw-trends-probe-store";
 import {
@@ -42,6 +44,8 @@ import {
 } from "@/persistence/paw-trends-probe-store";
 import { PawTrendsWalkEditor } from "@/features/walks/paw-trends-walk-editor";
 import { PawTrendsWalkEntryCard } from "@/features/walks/paw-trends-walk-entry-card";
+import { PawTrendsTrainingEditor } from "@/features/training/paw-trends-training-editor";
+import { PawTrendsTrainingEntryCard } from "@/features/training/paw-trends-training-entry-card";
 import {
   registerPawTrendsPwa,
   requestPawTrendsPersistentStorage,
@@ -431,9 +435,11 @@ function PawTrendsApplicationShell({
 }
 
 type PawTrendsTodayEditor =
+  | { kind: "activity-choice" }
   | { kind: "check-in" }
   | { entry?: PawTrendsMoodEntry; kind: "mood"; subject: PawTrendsMoodSubject }
   | { kind: "walk"; walk?: PawTrendsWalk }
+  | { kind: "training"; training?: PawTrendsTraining }
   | null;
 
 const formatDateTimeLocalValue = (date: Date): string => {
@@ -455,40 +461,42 @@ function PawTrendsToday({
   const localDate = getPawTrendsLocalDate(now);
   const [currentSetup, setCurrentSetup] = useState(setupRecord);
   const [moodEntries, setMoodEntries] = useState<PawTrendsMoodEntry[]>([]);
-  const [walks, setWalks] = useState<PawTrendsWalk[]>([]);
+  const [dogActivities, setDogActivities] = useState<PawTrendsDogActivity[]>(
+    []
+  );
   const [recentTriggers, setRecentTriggers] = useState<string[]>([]);
   const [dailyCheckIn, setDailyCheckIn] =
     useState<PawTrendsDailyCheckIn | null>(null);
   const [editor, setEditor] = useState<PawTrendsTodayEditor>(null);
 
   const loadTodayState = async () => {
-    const [entries, checkIn, savedWalks, savedRecentTriggers] =
+    const [entries, checkIn, savedActivities, savedRecentTriggers] =
       await Promise.all([
         store.listMoodEntriesForDate(localDate),
         store.readDailyCheckIn(localDate),
-        store.listWalksForDate(localDate),
+        store.listDogActivitiesForDate(localDate),
         store.listRecentTriggerLabels(3),
       ]);
     setMoodEntries(entries);
     setDailyCheckIn(checkIn);
-    setWalks(savedWalks);
+    setDogActivities(savedActivities);
     setRecentTriggers(savedRecentTriggers);
   };
 
   useEffect(() => {
     let isCurrent = true;
     const loadInitialTodayState = async () => {
-      const [entries, checkIn, savedWalks, savedRecentTriggers] =
+      const [entries, checkIn, savedActivities, savedRecentTriggers] =
         await Promise.all([
           store.listMoodEntriesForDate(localDate),
           store.readDailyCheckIn(localDate),
-          store.listWalksForDate(localDate),
+          store.listDogActivitiesForDate(localDate),
           store.listRecentTriggerLabels(3),
         ]);
       if (isCurrent) {
         setMoodEntries(entries);
         setDailyCheckIn(checkIn);
-        setWalks(savedWalks);
+        setDogActivities(savedActivities);
         setRecentTriggers(savedRecentTriggers);
       }
     };
@@ -510,7 +518,8 @@ function PawTrendsToday({
     month: "long",
     weekday: "long",
   }).format(now);
-  const entryCount = moodEntries.length + walks.length + (dailyCheckIn ? 1 : 0);
+  const entryCount =
+    moodEntries.length + dogActivities.length + (dailyCheckIn ? 1 : 0);
   let dailyCheckInStatus = "Not completed";
   if (dailyCheckIn) {
     dailyCheckInStatus =
@@ -524,11 +533,19 @@ function PawTrendsToday({
       kind: "mood" as const,
       timestamp: entry.recordedAt,
     })),
-    ...walks.map((walk) => ({
-      entry: walk,
-      kind: "walk" as const,
-      timestamp: walk.startedAt,
-    })),
+    ...dogActivities.map((activity) =>
+      activity.kind === "walk"
+        ? {
+            entry: activity,
+            kind: "walk" as const,
+            timestamp: activity.startedAt,
+          }
+        : {
+            entry: activity,
+            kind: "training" as const,
+            timestamp: activity.startedAt,
+          }
+    ),
     ...(dailyCheckIn
       ? [
           {
@@ -629,12 +646,71 @@ function PawTrendsToday({
         />
       ) : null}
 
+      {editor?.kind === "training" ? (
+        <PawTrendsTrainingEditor
+          {...(editor.training === undefined
+            ? {}
+            : { initialTraining: editor.training })}
+          labels={currentSetup.labels}
+          store={store}
+          onCancel={() => {
+            setEditor(null);
+          }}
+          onLabelsChanged={setCurrentSetup}
+          onSaved={async () => {
+            await loadTodayState();
+            setEditor(null);
+          }}
+        />
+      ) : null}
+
+      {editor?.kind === "activity-choice" ? (
+        <section
+          className="paw-activity-choice"
+          aria-labelledby="activity-choice-title"
+        >
+          <div className="paw-inline-editor-heading">
+            <div>
+              <span>Completed activity</span>
+              <h2 id="activity-choice-title">What did you log?</h2>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setEditor(null);
+              }}
+            >
+              Close
+            </button>
+          </div>
+          <div>
+            <Button
+              type="button"
+              onClick={() => {
+                setEditor({ kind: "walk" });
+              }}
+            >
+              Walk
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setEditor({ kind: "training" });
+              }}
+            >
+              Training
+            </Button>
+          </div>
+        </section>
+      ) : null}
+
       <Button
         className="paw-log-activity"
         size="lg"
         type="button"
         onClick={() => {
-          setEditor({ kind: "walk" });
+          setEditor({ kind: "activity-choice" });
         }}
       >
         <Plus data-icon="inline-start" aria-hidden="true" />
@@ -693,6 +769,22 @@ function PawTrendsToday({
                     onDeleted={loadTodayState}
                     onEdit={() => {
                       setEditor({ kind: "walk", walk: timelineEntry.entry });
+                    }}
+                  />
+                );
+              }
+              if (timelineEntry.kind === "training") {
+                return (
+                  <PawTrendsTrainingEntryCard
+                    key={timelineEntry.entry.id}
+                    training={timelineEntry.entry}
+                    store={store}
+                    onDeleted={loadTodayState}
+                    onEdit={() => {
+                      setEditor({
+                        kind: "training",
+                        training: timelineEntry.entry,
+                      });
                     }}
                   />
                 );

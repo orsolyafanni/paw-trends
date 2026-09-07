@@ -114,4 +114,48 @@ describe("Paw Trends first-run setup", () => {
       screen.getByText("Confirm where Paw Trends keeps your data to continue.")
     ).toBeVisible();
   });
+
+  it("reopens a saved Training from Today for editing", async () => {
+    const user = userEvent.setup();
+    const store = createPawTrendsProbeStore({
+      databaseName: `paw-trends-training-today-${crypto.randomUUID()}`,
+    });
+    await store.saveSetupRecord({
+      dataOwnershipAcknowledged: true,
+      dogName: "Mabel",
+      labels: {
+        Company: [],
+        "Dog Symptom": ["Limping"],
+        "Owner Symptom": [],
+        Place: ["Home route"],
+        "Training Type": ["Mantrailing", "Physio"],
+        Trigger: ["Dog"],
+      },
+      storageStatus: "browser-managed",
+    });
+    const now = new Date();
+    const localDate = [
+      now.getFullYear(),
+      String(now.getMonth() + 1).padStart(2, "0"),
+      String(now.getDate()).padStart(2, "0"),
+    ].join("-");
+    await store.saveTraining({
+      activityMood: "Playful",
+      dogSymptoms: [],
+      localDate,
+      startedAt: now.toISOString(),
+      trainingType: "Mantrailing",
+    });
+
+    render(<PawTrendsApp store={store} />);
+    await expect(
+      screen.findByRole("heading", { name: "Mantrailing" })
+    ).resolves.toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Edit" }));
+
+    expect(screen.getByRole("form", { name: "Edit Training" })).toBeVisible();
+    expect(
+      screen.queryByLabelText("Duration in minutes")
+    ).not.toBeInTheDocument();
+  });
 });
