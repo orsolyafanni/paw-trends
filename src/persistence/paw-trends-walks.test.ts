@@ -1,3 +1,4 @@
+import { Dexie } from "dexie";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
@@ -21,6 +22,47 @@ const createWalkStore = async () => {
 };
 
 describe("Paw Trends Walks", () => {
+  it("migrates existing Walks into the Dog Activity store", async () => {
+    const databaseName = `paw-trends-walk-migration-${crypto.randomUUID()}`;
+    const legacyDatabase = new Dexie(databaseName);
+    legacyDatabase.version(4).stores({
+      dailyCheckIns: "localDate",
+      moodEntries: "id, localDate, [subject+recordedAt]",
+      records: "id",
+      setup: "id",
+      walks: "id, localDate, startedAt",
+    });
+    await legacyDatabase.table("setup").put({
+      completedAt: new Date().toISOString(),
+      dataOwnershipAcknowledged: true,
+      dogName: "Mabel",
+      id: "primary-owner",
+      labels: structuredClone(PAW_TRENDS_SEEDED_REUSABLE_LABELS),
+      schemaVersion: 2,
+      storageStatus: "browser-managed",
+    });
+    await legacyDatabase.table("walks").put({
+      activityMood: "Playful",
+      company: [],
+      createdAt: new Date().toISOString(),
+      dogSymptoms: [],
+      durationMinutes: 30,
+      id: "legacy-walk",
+      localDate: "2026-09-07",
+      place: "Home route",
+      startedAt: new Date(2026, 8, 7, 8).toISOString(),
+      triggerEncounters: [],
+      updatedAt: new Date().toISOString(),
+    });
+    legacyDatabase.close();
+
+    const store = createPawTrendsProbeStore({ databaseName });
+    const walks = await store.listWalksForDate("2026-09-07");
+
+    expect(walks).toHaveLength(1);
+    expect(walks[0]).toMatchObject({ id: "legacy-walk", kind: "walk" });
+  });
+
   it("stores empty context and repeated Trigger Encounters at every severity boundary", async () => {
     const store = await createWalkStore();
     const severities = [0, 1, 2, 3, 4, 5] as const;
