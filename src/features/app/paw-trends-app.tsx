@@ -22,6 +22,7 @@ import type { SyntheticEvent } from "react";
 
 import { Button } from "@/components/ui/button";
 import { PawTrendsHistory } from "@/features/history/paw-trends-history";
+import { PawTrendsLabelSettings } from "@/features/settings/paw-trends-label-settings";
 import type {
   PawTrendsDailyCheckIn,
   PawTrendsDogActivity,
@@ -128,6 +129,7 @@ export function PawTrendsApp({ store }: PawTrendsAppProps) {
       setupRecord={setupRecord}
       store={store}
       onNavigate={setActiveScreen}
+      onSetupChange={setSetupRecord}
     />
   );
 }
@@ -386,6 +388,7 @@ interface PawTrendsApplicationShellProps {
   setupRecord: PawTrendsSetupRecord;
   store: PawTrendsProbeStore;
   onNavigate: (screen: PawTrendsAppScreen) => void;
+  onSetupChange: (setup: PawTrendsSetupRecord) => void;
 }
 
 function PawTrendsApplicationShell({
@@ -393,6 +396,7 @@ function PawTrendsApplicationShell({
   setupRecord,
   store,
   onNavigate,
+  onSetupChange,
 }: PawTrendsApplicationShellProps) {
   let screenContent;
   if (activeScreen === "today") {
@@ -402,7 +406,13 @@ function PawTrendsApplicationShell({
       <PawTrendsHistory setupRecord={setupRecord} store={store} />
     );
   } else if (activeScreen === "settings") {
-    screenContent = <PawTrendsSettings setupRecord={setupRecord} />;
+    screenContent = (
+      <PawTrendsSettings
+        onSetupChange={onSetupChange}
+        setupRecord={setupRecord}
+        store={store}
+      />
+    );
   } else {
     screenContent = <PawTrendsEmptyScreen />;
   }
@@ -1160,9 +1170,13 @@ function PawTrendsEmptyScreen() {
 }
 
 function PawTrendsSettings({
+  onSetupChange,
   setupRecord,
+  store,
 }: {
+  onSetupChange: (setup: PawTrendsSetupRecord) => void;
   setupRecord: PawTrendsSetupRecord;
+  store: PawTrendsProbeStore;
 }) {
   return (
     <main className="paw-app-content paw-secondary-screen">
@@ -1175,16 +1189,15 @@ function PawTrendsSettings({
         </div>
         <h1>Settings</h1>
       </header>
+      <PawTrendsLabelSettings
+        onSetupChange={onSetupChange}
+        setupRecord={setupRecord}
+        store={store}
+      />
       <section className="paw-settings-list" aria-label="Current setup">
         <div>
           <span>Dog</span>
           <strong>{setupRecord.dogName}</strong>
-        </div>
-        <div>
-          <span>Reusable labels</span>
-          <strong>
-            {Object.values(setupRecord.labels).flat().length} saved
-          </strong>
         </div>
         <div>
           <span>Browser storage</span>

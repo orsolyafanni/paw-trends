@@ -9,6 +9,63 @@ import { PawTrendsApp } from "./paw-trends-app";
 // oxlint-disable vitest/max-expects -- These tests cover complete first-run journeys.
 
 describe("Paw Trends first-run setup", () => {
+  it("shows renamed labels immediately in Today and History", async () => {
+    const user = userEvent.setup();
+    const store = createPawTrendsProbeStore({
+      databaseName: `paw-trends-label-settings-ui-${crypto.randomUUID()}`,
+    });
+    await store.saveSetupRecord({
+      dataOwnershipAcknowledged: true,
+      dogName: "Mabel",
+      labels: {
+        Company: [],
+        "Dog Symptom": [],
+        "Owner Symptom": ["Tired"],
+        Place: ["Home route"],
+        "Training Type": ["Physio"],
+        Trigger: ["Dog"],
+      },
+      storageStatus: "browser-managed",
+    });
+    const localDate = [
+      new Date().getFullYear(),
+      String(new Date().getMonth() + 1).padStart(2, "0"),
+      String(new Date().getDate()).padStart(2, "0"),
+    ].join("-");
+    await store.saveDailyCheckIn(localDate, ["Tired"]);
+    render(<PawTrendsApp store={store} />);
+
+    const navigation = await screen.findByRole("navigation", {
+      name: "Primary navigation",
+    });
+    await user.click(
+      within(navigation).getByRole("button", { name: "Settings" })
+    );
+    const symptomHeading = screen.getByRole("heading", {
+      name: "Owner Symptom",
+    });
+    const symptomGroup = symptomHeading.closest("section");
+    if (symptomGroup === null) {
+      throw new Error("Owner Symptom settings group was not found.");
+    }
+    await user.click(
+      within(symptomGroup).getByRole("button", { name: "Rename" })
+    );
+    const nameInput = within(symptomGroup).getByLabelText("New name");
+    await user.clear(nameInput);
+    await user.type(nameInput, "Fatigued");
+    await user.click(
+      within(symptomGroup).getByRole("button", { name: "Save name" })
+    );
+
+    await user.click(within(navigation).getByRole("button", { name: "Today" }));
+    expect(screen.getByText("Completed · Fatigued")).toBeVisible();
+    await user.click(
+      within(navigation).getByRole("button", { name: "History" })
+    );
+    await expect(screen.findByText("Fatigued")).resolves.toBeVisible();
+  });
+
   it("saves adjusted labels and reopens on Today", async () => {
     const user = userEvent.setup();
     const databaseName = `paw-trends-setup-ui-${crypto.randomUUID()}`;

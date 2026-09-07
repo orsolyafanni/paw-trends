@@ -20,6 +20,12 @@ export type PawTrendsReusableLabels = Record<
   string[]
 >;
 
+export interface PawTrendsReusableLabelReference {
+  id: string;
+  kind: "Daily Check-in" | "Training" | "Walk";
+  localDate: string;
+}
+
 export const PAW_TRENDS_SEEDED_REUSABLE_LABELS: PawTrendsReusableLabels = {
   Company: [],
   "Dog Symptom": ["Limping", "Robot-like movement"],
@@ -150,6 +156,10 @@ export interface PawTrendsWalkReactionSummary {
 }
 
 export interface PawTrendsProbeStore {
+  deleteReusableLabel: (
+    category: PawTrendsReusableLabelCategory,
+    label: string
+  ) => Promise<PawTrendsSetupRecord>;
   deleteDogActivity: (id: string) => Promise<void>;
   deleteWalk: (id: string) => Promise<void>;
   deleteTraining: (id: string) => Promise<void>;
@@ -158,6 +168,10 @@ export interface PawTrendsProbeStore {
   listHistoryRecords: () => Promise<PawTrendsHistoryRecord[]>;
   listMoodEntriesForDate: (localDate: string) => Promise<PawTrendsMoodEntry[]>;
   listRecentTriggerLabels: (limit: number) => Promise<string[]>;
+  listReusableLabelReferences: (
+    category: PawTrendsReusableLabelCategory,
+    label: string
+  ) => Promise<PawTrendsReusableLabelReference[]>;
   listDogActivitiesForDate: (
     localDate: string
   ) => Promise<PawTrendsDogActivity[]>;
@@ -187,6 +201,16 @@ export interface PawTrendsProbeStore {
   saveReusableLabel: (
     category: PawTrendsReusableLabelCategory,
     label: string
+  ) => Promise<PawTrendsSetupRecord>;
+  renameReusableLabel: (
+    category: PawTrendsReusableLabelCategory,
+    label: string,
+    nextLabel: string
+  ) => Promise<PawTrendsSetupRecord>;
+  mergeReusableLabels: (
+    category: PawTrendsReusableLabelCategory,
+    label: string,
+    retainedLabel: string
   ) => Promise<PawTrendsSetupRecord>;
   saveSampleRecord: (note: string) => Promise<PawTrendsProbeRecord>;
   saveTraining: (
@@ -342,15 +366,339 @@ export const getPawTrendsMoodIntervalEnd = (
   return new Date(year, month - 1, day + 1).toISOString();
 };
 
+/** Trims a reusable label and enforces its stored length. */
+export const normalizePawTrendsReusableLabel = (
+  category: PawTrendsReusableLabelCategory,
+  label: string
+): string => {
+  const normalizedLabel = label.trim();
+  if (normalizedLabel.length === 0 || normalizedLabel.length > 80) {
+    throw new Error(`${category} label must be between 1 and 80 characters.`);
+  }
+  return normalizedLabel;
+};
+
+const findPawTrendsReusableLabel = (
+  labels: readonly string[],
+  requestedLabel: string
+): string => {
+  const savedLabel = labels.find(
+    (label) =>
+      label.toLocaleLowerCase() === requestedLabel.trim().toLocaleLowerCase()
+  );
+  if (savedLabel === undefined) {
+    throw new Error("Reusable label could not be found.");
+  }
+  return savedLabel;
+};
+
+const requirePawTrendsSetup = async (
+  database: PawTrendsProbeDatabase
+): Promise<PawTrendsSetupRecord> => {
+  const setup = await database.setup.get(PAW_TRENDS_SETUP_RECORD_ID);
+  if (!setup) {
+    throw new Error("Reusable label cannot be changed before setup.");
+  }
+  return setup;
+};
+
+const replacePawTrendsSetupLabels = (
+  setup: PawTrendsSetupRecord,
+  category: PawTrendsReusableLabelCategory,
+  labels: string[]
+): PawTrendsSetupRecord => ({
+  ...setup,
+  labels: { ...setup.labels, [category]: labels },
+});
+
+const hasPawTrendsReusableLabel = (
+  labels: readonly string[],
+  requestedLabel: string
+): boolean =>
+  labels.some(
+    (label) => label.toLocaleLowerCase() === requestedLabel.toLocaleLowerCase()
+  );
+
+const replacePawTrendsLabelInList = (
+  labels: readonly string[],
+  sourceLabel: string,
+  retainedLabel: string
+): string[] => {
+  const replaced = labels.map((label) =>
+    label.toLocaleLowerCase() === sourceLabel.toLocaleLowerCase()
+      ? retainedLabel
+      : label
+  );
+  return replaced.filter(
+    (label, index) =>
+      replaced.findIndex(
+        (candidate) =>
+          candidate.toLocaleLowerCase() === label.toLocaleLowerCase()
+      ) === index
+  );
+};
+
+const pawTrendsActivityUsesReusableLabel = (
+  activity: PawTrendsDogActivity,
+  category: PawTrendsReusableLabelCategory,
+  label: string
+): boolean => {
+  if (activity.kind === "training") {
+    return (
+      (category === "Training Type" &&
+        activity.trainingType.toLocaleLowerCase() ===
+          label.toLocaleLowerCase()) ||
+      (category === "Dog Symptom" &&
+        hasPawTrendsReusableLabel(activity.dogSymptoms, label))
+    );
+  }
+  if (category === "Place") {
+    return activity.place.toLocaleLowerCase() === label.toLocaleLowerCase();
+  }
+  if (category === "Company") {
+    return hasPawTrendsReusableLabel(activity.company, label);
+  }
+  if (category === "Dog Symptom") {
+    return hasPawTrendsReusableLabel(activity.dogSymptoms, label);
+  }
+  return (
+    category === "Trigger" &&
+    activity.triggerEncounters.some(
+      (encounter) =>
+        encounter.trigger.toLocaleLowerCase() === label.toLocaleLowerCase()
+    )
+  );
+};
+
+const listPawTrendsReusableLabelReferences = async (
+  database: PawTrendsProbeDatabase,
+  category: PawTrendsReusableLabelCategory,
+  label: string
+): Promise<PawTrendsReusableLabelReference[]> => {
+  const [activities, checkIns] = await Promise.all([
+    database.dogActivities.toArray(),
+    category === "Owner Symptom" ? database.dailyCheckIns.toArray() : [],
+  ]);
+  const activityReferences = activities
+    .filter((activity) =>
+      pawTrendsActivityUsesReusableLabel(activity, category, label)
+    )
+    .map((activity) => ({
+      id: activity.id,
+      kind:
+        activity.kind === "walk" ? ("Walk" as const) : ("Training" as const),
+      localDate: activity.localDate,
+    }));
+  const checkInReferences = checkIns
+    .filter((checkIn) =>
+      hasPawTrendsReusableLabel(checkIn.ownerSymptoms, label)
+    )
+    .map((checkIn) => ({
+      id: checkIn.localDate,
+      kind: "Daily Check-in" as const,
+      localDate: checkIn.localDate,
+    }));
+  return [...activityReferences, ...checkInReferences].toSorted((left, right) =>
+    right.localDate.localeCompare(left.localDate)
+  );
+};
+
+const replacePawTrendsActivityLabel = (
+  activity: PawTrendsDogActivity,
+  category: PawTrendsReusableLabelCategory,
+  sourceLabel: string,
+  retainedLabel: string
+): PawTrendsDogActivity => {
+  const updatedAt = new Date().toISOString();
+  if (activity.kind === "training") {
+    return {
+      ...activity,
+      dogSymptoms:
+        category === "Dog Symptom"
+          ? replacePawTrendsLabelInList(
+              activity.dogSymptoms,
+              sourceLabel,
+              retainedLabel
+            )
+          : activity.dogSymptoms,
+      trainingType:
+        category === "Training Type" &&
+        activity.trainingType.toLocaleLowerCase() ===
+          sourceLabel.toLocaleLowerCase()
+          ? retainedLabel
+          : activity.trainingType,
+      updatedAt,
+    };
+  }
+  return {
+    ...activity,
+    company:
+      category === "Company"
+        ? replacePawTrendsLabelInList(
+            activity.company,
+            sourceLabel,
+            retainedLabel
+          )
+        : activity.company,
+    dogSymptoms:
+      category === "Dog Symptom"
+        ? replacePawTrendsLabelInList(
+            activity.dogSymptoms,
+            sourceLabel,
+            retainedLabel
+          )
+        : activity.dogSymptoms,
+    place:
+      category === "Place" &&
+      activity.place.toLocaleLowerCase() === sourceLabel.toLocaleLowerCase()
+        ? retainedLabel
+        : activity.place,
+    triggerEncounters:
+      category === "Trigger"
+        ? activity.triggerEncounters.map((encounter) => ({
+            ...encounter,
+            trigger:
+              encounter.trigger.toLocaleLowerCase() ===
+              sourceLabel.toLocaleLowerCase()
+                ? retainedLabel
+                : encounter.trigger,
+          }))
+        : activity.triggerEncounters,
+    updatedAt,
+  };
+};
+
+interface PawTrendsReusableLabelUpdate {
+  beforeCommit?: () => Promise<void> | void;
+  category: PawTrendsReusableLabelCategory;
+  label: string;
+  nextLabel: string;
+  operation: "merge" | "rename";
+}
+
+const updatePawTrendsReusableLabel = async (
+  database: PawTrendsProbeDatabase,
+  update: PawTrendsReusableLabelUpdate
+): Promise<PawTrendsSetupRecord> =>
+  await database.transaction(
+    "rw",
+    database.setup,
+    database.dogActivities,
+    database.dailyCheckIns,
+    async () => {
+      const setup = await requirePawTrendsSetup(database);
+      const sourceLabel = findPawTrendsReusableLabel(
+        setup.labels[update.category],
+        update.label
+      );
+      const normalizedNextLabel = normalizePawTrendsReusableLabel(
+        update.category,
+        update.nextLabel
+      );
+      const existingNextLabel = setup.labels[update.category].find(
+        (label) =>
+          label !== sourceLabel &&
+          label.toLocaleLowerCase() === normalizedNextLabel.toLocaleLowerCase()
+      );
+      if (update.operation === "rename" && existingNextLabel !== undefined) {
+        throw new Error(
+          `${update.category} already has a label named ${existingNextLabel}.`
+        );
+      }
+      if (update.operation === "merge" && existingNextLabel === undefined) {
+        throw new Error("Choose another saved label to retain.");
+      }
+      const retainedLabel = existingNextLabel ?? normalizedNextLabel;
+      const activities = await database.dogActivities.toArray();
+      const changedActivities = activities
+        .filter((activity) =>
+          pawTrendsActivityUsesReusableLabel(
+            activity,
+            update.category,
+            sourceLabel
+          )
+        )
+        .map((activity) =>
+          replacePawTrendsActivityLabel(
+            activity,
+            update.category,
+            sourceLabel,
+            retainedLabel
+          )
+        );
+      if (changedActivities.length > 0) {
+        await database.dogActivities.bulkPut(changedActivities);
+      }
+      if (update.category === "Owner Symptom") {
+        const checkIns = await database.dailyCheckIns.toArray();
+        const changedCheckIns = checkIns
+          .filter((checkIn) =>
+            hasPawTrendsReusableLabel(checkIn.ownerSymptoms, sourceLabel)
+          )
+          .map((checkIn) => ({
+            ...checkIn,
+            ownerSymptoms: replacePawTrendsLabelInList(
+              checkIn.ownerSymptoms,
+              sourceLabel,
+              retainedLabel
+            ),
+            updatedAt: new Date().toISOString(),
+          }));
+        if (changedCheckIns.length > 0) {
+          await database.dailyCheckIns.bulkPut(changedCheckIns);
+        }
+      }
+      await update.beforeCommit?.();
+      const nextLabels = [
+        ...setup.labels[update.category].filter(
+          (label) => label !== sourceLabel && label !== existingNextLabel
+        ),
+        retainedLabel,
+      ];
+      const updatedSetup = replacePawTrendsSetupLabels(
+        setup,
+        update.category,
+        nextLabels
+      );
+      await database.setup.put(updatedSetup);
+      return updatedSetup;
+    }
+  );
+
 /** Creates the device-local store for setup and the original proof record. */
 export const createPawTrendsProbeStore = (_options?: {
   databaseName?: string;
+  beforeReusableLabelCommit?: () => Promise<void> | void;
 }): PawTrendsProbeStore => {
   const database = new PawTrendsProbeDatabase(
     _options?.databaseName ?? PAW_TRENDS_PROBE_DATABASE
   );
 
   return {
+    deleteReusableLabel: async (category, label) => {
+      const setup = await requirePawTrendsSetup(database);
+      const savedLabel = findPawTrendsReusableLabel(
+        setup.labels[category],
+        label
+      );
+      const references = await listPawTrendsReusableLabelReferences(
+        database,
+        category,
+        savedLabel
+      );
+      if (references.length > 0) {
+        throw new Error(
+          `${category} label is used by ${references.length} historical ${references.length === 1 ? "record" : "records"}. Rename or merge it instead.`
+        );
+      }
+      const updatedSetup = replacePawTrendsSetupLabels(
+        setup,
+        category,
+        setup.labels[category].filter((candidate) => candidate !== savedLabel)
+      );
+      await database.setup.put(updatedSetup);
+      return updatedSetup;
+    },
     deleteDogActivity: async (id) => {
       await database.dogActivities.delete(id);
     },
@@ -420,6 +768,8 @@ export const createPawTrendsProbeStore = (_options?: {
       }
       return recent;
     },
+    listReusableLabelReferences: async (category, label) =>
+      await listPawTrendsReusableLabelReferences(database, category, label),
     listDogActivitiesForDate: async (localDate) =>
       await database.dogActivities
         .where("localDate")
@@ -524,16 +874,8 @@ export const createPawTrendsProbeStore = (_options?: {
       return savedEntry;
     },
     saveReusableLabel: async (category, label) => {
-      const normalizedLabel = label.trim();
-      if (normalizedLabel.length === 0 || normalizedLabel.length > 80) {
-        throw new Error(
-          `${category} label must be between 1 and 80 characters.`
-        );
-      }
-      const setup = await database.setup.get(PAW_TRENDS_SETUP_RECORD_ID);
-      if (!setup) {
-        throw new Error("Reusable label cannot be saved before setup.");
-      }
+      const normalizedLabel = normalizePawTrendsReusableLabel(category, label);
+      const setup = await requirePawTrendsSetup(database);
       if (
         setup.labels[category].some(
           (savedLabel) =>
@@ -553,6 +895,22 @@ export const createPawTrendsProbeStore = (_options?: {
       await database.setup.put(updatedSetup);
       return updatedSetup;
     },
+    renameReusableLabel: async (category, label, nextLabel) =>
+      await updatePawTrendsReusableLabel(database, {
+        beforeCommit: _options?.beforeReusableLabelCommit,
+        category,
+        label,
+        nextLabel,
+        operation: "rename",
+      }),
+    mergeReusableLabels: async (category, label, retainedLabel) =>
+      await updatePawTrendsReusableLabel(database, {
+        beforeCommit: _options?.beforeReusableLabelCommit,
+        category,
+        label,
+        nextLabel: retainedLabel,
+        operation: "merge",
+      }),
     saveSampleRecord: async (note) => {
       const record: PawTrendsProbeRecord = {
         id: PAW_TRENDS_SAMPLE_RECORD_ID,
