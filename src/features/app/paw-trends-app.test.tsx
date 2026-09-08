@@ -2,6 +2,7 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vite-plus/test";
 
+import { exportPawTrendsBackup } from "@/backup/paw-trends-backup";
 import { createPawTrendsProbeStore } from "@/persistence/paw-trends-probe-store";
 
 import { PawTrendsApp } from "./paw-trends-app";
@@ -57,6 +58,7 @@ describe("Paw Trends first-run setup", () => {
     await user.click(
       within(symptomGroup).getByRole("button", { name: "Save name" })
     );
+    await expect(screen.findByText("Tired renamed.")).resolves.toBeVisible();
 
     await user.click(within(navigation).getByRole("button", { name: "Today" }));
     expect(screen.getByText("Completed · Fatigued")).toBeVisible();
@@ -170,6 +172,121 @@ describe("Paw Trends first-run setup", () => {
     expect(
       screen.getByText("Confirm where Paw Trends keeps your data to continue.")
     ).toBeVisible();
+  });
+
+  it("requires the exact destructive confirmation before deleting all data", async () => {
+    const user = userEvent.setup();
+    const store = createPawTrendsProbeStore({
+      databaseName: `paw-trends-delete-all-${crypto.randomUUID()}`,
+    });
+    await store.saveSetupRecord({
+      dataOwnershipAcknowledged: true,
+      dogName: "Mabel",
+      labels: {
+        Company: [],
+        "Dog Symptom": [],
+        "Owner Symptom": [],
+        Place: ["Home route"],
+        "Training Type": [],
+        Trigger: [],
+      },
+      storageStatus: "browser-managed",
+    });
+    render(<PawTrendsApp store={store} />);
+    const navigation = await screen.findByRole("navigation", {
+      name: "Primary navigation",
+    });
+    await user.click(
+      within(navigation).getByRole("button", { name: "Settings" })
+    );
+
+    const deleteButton = screen.getByRole("button", {
+      name: "Delete all Paw Trends data",
+    });
+    const confirmation = screen.getByLabelText(
+      "Type DELETE PAW TRENDS to continue"
+    );
+    expect(deleteButton).toBeDisabled();
+    await user.type(confirmation, "delete paw trends");
+    expect(deleteButton).toBeDisabled();
+    await user.clear(confirmation);
+    await user.type(confirmation, "DELETE PAW TRENDS");
+    expect(deleteButton).toBeEnabled();
+    await user.click(deleteButton);
+
+    await expect(
+      screen.findByRole("heading", {
+        name: "A private field journal for you and your Dog.",
+      })
+    ).resolves.toBeVisible();
+    await expect(store.readSetupRecord()).resolves.toBeNull();
+  });
+
+  it("previews a complete backup before replacing current data", async () => {
+    const user = userEvent.setup();
+    const source = createPawTrendsProbeStore({
+      databaseName: `paw-trends-preview-source-${crypto.randomUUID()}`,
+    });
+    await source.saveSetupRecord({
+      dataOwnershipAcknowledged: true,
+      dogName: "Mabel",
+      labels: {
+        Company: [],
+        "Dog Symptom": [],
+        "Owner Symptom": [],
+        Place: [],
+        "Training Type": [],
+        Trigger: [],
+      },
+      storageStatus: "granted",
+    });
+    const backupJson = await exportPawTrendsBackup(source);
+    const target = createPawTrendsProbeStore({
+      databaseName: `paw-trends-preview-target-${crypto.randomUUID()}`,
+    });
+    await target.saveSetupRecord({
+      dataOwnershipAcknowledged: true,
+      dogName: "Current Dog",
+      labels: {
+        Company: [],
+        "Dog Symptom": [],
+        "Owner Symptom": [],
+        Place: [],
+        "Training Type": [],
+        Trigger: [],
+      },
+      storageStatus: "browser-managed",
+    });
+    render(<PawTrendsApp store={target} />);
+    const navigation = await screen.findByRole("navigation", {
+      name: "Primary navigation",
+    });
+    await user.click(
+      within(navigation).getByRole("button", { name: "Settings" })
+    );
+    const backupFile = new File([backupJson], "mabel-backup.json", {
+      type: "application/json",
+    });
+    Object.defineProperty(backupFile, "text", {
+      // oxlint-disable-next-line require-await -- mirrors the browser's asynchronous File.text API.
+      value: async () => backupJson,
+    });
+    await user.upload(screen.getByLabelText("Choose JSON backup"), backupFile);
+
+    const preview = await screen.findByLabelText("Restore preview");
+    expect(within(preview).getByText("Mabel")).toBeVisible();
+    expect(within(preview).getByText("1")).toBeVisible();
+    expect(
+      within(preview).getByText(/replaces every current Paw Trends record/u)
+    ).toBeVisible();
+    expect(
+      within(preview).getByRole("button", {
+        name: "Replace all data with this backup",
+      })
+    ).toBeVisible();
+    await expect(target.readSetupRecord()).resolves.toMatchObject({
+      dogName: "Current Dog",
+    });
   });
 
   it("reopens a saved Training from Today for editing", async () => {

@@ -1583,6 +1583,177 @@ label {
   margin: 0;
 }
 
+.paw-data-settings {
+  display: grid;
+  gap: 24px;
+}
+
+.paw-backup-reminder,
+.paw-guidance-grid article,
+.paw-danger-zone > div:first-child {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+}
+
+.paw-backup-reminder {
+  padding: 16px;
+  border: 1px solid color-mix(in srgb, var(--rust) 45%, var(--border));
+  border-radius: 15px;
+  background: color-mix(in srgb, var(--secondary) 72%, var(--card));
+}
+
+.paw-backup-reminder svg,
+.paw-guidance-grid svg,
+.paw-danger-zone svg,
+.paw-settings-section-heading > svg {
+  width: 22px;
+  height: 22px;
+  color: var(--rust);
+}
+
+.paw-backup-reminder strong,
+.paw-backup-actions strong {
+  font-size: 1rem;
+}
+
+.paw-backup-reminder p,
+.paw-backup-actions p,
+.paw-guidance-grid p,
+.paw-danger-zone p,
+.paw-restore-preview p {
+  margin: 4px 0 0;
+  color: var(--muted-foreground);
+  line-height: 1.55;
+}
+
+.paw-data-settings-section,
+.paw-danger-zone {
+  padding: 20px;
+  border: 1px solid var(--border);
+  border-radius: 15px;
+  background: var(--card);
+}
+
+.paw-backup-actions,
+.paw-guidance-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.paw-backup-actions > div {
+  display: flex;
+  min-height: 190px;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 18px;
+  border-radius: 13px;
+  background: var(--background);
+}
+
+.paw-backup-actions p {
+  flex: 1;
+  margin-bottom: 18px;
+  font-size: 0.9rem;
+}
+
+.paw-file-button {
+  display: inline-flex;
+  min-height: 44px;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  background: var(--card);
+  font-size: 0.875rem;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.paw-file-button svg {
+  width: 16px;
+  height: 16px;
+}
+
+.paw-operation-message,
+.paw-restore-error {
+  margin: 16px 0 0;
+}
+
+.paw-restore-preview {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 16px;
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: 13px;
+  background: var(--sage);
+}
+
+.paw-restore-preview > div {
+  display: grid;
+  gap: 3px;
+}
+
+.paw-restore-preview span,
+.paw-restore-preview small {
+  color: var(--muted-foreground);
+  font-size: 0.8rem;
+}
+
+.paw-restore-preview p,
+.paw-restore-preview [data-slot="button"] {
+  grid-column: 1 / -1;
+}
+
+.paw-restore-preview [data-slot="button"] {
+  justify-self: start;
+}
+
+.paw-guidance-grid article {
+  padding: 18px;
+  border-radius: 15px;
+  background: var(--sage);
+}
+
+.paw-guidance-grid h2,
+.paw-danger-zone h2 {
+  margin: 0;
+  font-family: var(--font-heading);
+  font-size: 1.15rem;
+}
+
+.paw-guidance-grid p,
+.paw-danger-zone p {
+  font-size: 0.9rem;
+}
+
+.paw-danger-zone {
+  border-color: color-mix(in srgb, var(--destructive) 50%, var(--border));
+}
+
+.paw-danger-zone > label {
+  display: block;
+  margin-top: 18px;
+  font-size: 0.9rem;
+}
+
+.paw-danger-zone > input {
+  width: 100%;
+  min-height: 46px;
+  margin: 8px 0 12px;
+  padding: 9px 12px;
+  border: 1px solid var(--input);
+  border-radius: 11px;
+  color: var(--foreground);
+  background: var(--background);
+}
+
 @keyframes paw-breathe {
   50% {
     transform: scale(1.08);
@@ -1626,6 +1797,19 @@ label {
   .paw-setup-form {
     width: 100%;
     padding: 40px 20px max(52px, env(safe-area-inset-bottom));
+  }
+}
+
+@media (max-width: 620px) {
+  .paw-backup-actions,
+  .paw-guidance-grid,
+  .paw-restore-preview {
+    grid-template-columns: 1fr;
+  }
+
+  .paw-restore-preview p,
+  .paw-restore-preview [data-slot="button"] {
+    grid-column: 1;
   }
 }
 

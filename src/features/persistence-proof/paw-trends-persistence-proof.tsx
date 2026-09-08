@@ -147,10 +147,11 @@ export function PawTrendsPersistenceProof({
     }
 
     try {
-      const restoredRecord = await restorePawTrendsBackup(
+      const restoredSnapshot = await restorePawTrendsBackup(
         store,
         await backupFile.text()
       );
+      const restoredRecord = restoredSnapshot.probeRecords[0] ?? null;
       setRecord(restoredRecord);
       setNote(restoredRecord?.note ?? "");
       setNotice({ kind: "success", message: "Backup restored" });

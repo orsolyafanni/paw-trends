@@ -136,6 +136,22 @@ export type PawTrendsHistoryRecord =
   | { kind: "training"; record: PawTrendsTraining }
   | { kind: "walk"; record: PawTrendsWalk };
 
+export interface PawTrendsBackupStatus {
+  id: "backup-status";
+  lastSuccessfulExportAt: string | null;
+  newTopLevelRecordsSinceExport: number;
+  schemaVersion: 1;
+}
+
+export interface PawTrendsDatabaseSnapshot {
+  backupStatus: PawTrendsBackupStatus;
+  dailyCheckIns: PawTrendsDailyCheckIn[];
+  dogActivities: PawTrendsDogActivity[];
+  moodEntries: PawTrendsMoodEntry[];
+  probeRecords: PawTrendsProbeRecord[];
+  setup: PawTrendsSetupRecord | null;
+}
+
 export type PawTrendsWalkDraft = Omit<
   PawTrendsWalk,
   "createdAt" | "id" | "kind" | "updatedAt"
@@ -156,6 +172,7 @@ export interface PawTrendsWalkReactionSummary {
 }
 
 export interface PawTrendsProbeStore {
+  deleteAllData: () => Promise<void>;
   deleteReusableLabel: (
     category: PawTrendsReusableLabelCategory,
     label: string
@@ -177,11 +194,17 @@ export interface PawTrendsProbeStore {
   ) => Promise<PawTrendsDogActivity[]>;
   listTrainingsForDate: (localDate: string) => Promise<PawTrendsTraining[]>;
   listWalksForDate: (localDate: string) => Promise<PawTrendsWalk[]>;
+  markSuccessfulBackupExport: (exportedAt: string) => Promise<void>;
   readDailyCheckIn: (
     localDate: string
   ) => Promise<PawTrendsDailyCheckIn | null>;
   readSetupRecord: () => Promise<PawTrendsSetupRecord | null>;
   readSampleRecord: () => Promise<PawTrendsProbeRecord | null>;
+  readBackupStatus: () => Promise<PawTrendsBackupStatus>;
+  readDatabaseSnapshot: () => Promise<PawTrendsDatabaseSnapshot>;
+  replaceDatabaseSnapshot: (
+    snapshot: PawTrendsDatabaseSnapshot
+  ) => Promise<void>;
   replaceSampleRecord: (record: PawTrendsProbeRecord | null) => Promise<void>;
   saveSetupRecord: (
     setup: Omit<PawTrendsSetupRecord, "completedAt" | "id" | "schemaVersion">
@@ -222,8 +245,20 @@ export interface PawTrendsProbeStore {
 
 const PAW_TRENDS_SAMPLE_RECORD_ID: PawTrendsProbeRecordId = "owner-sample";
 const PAW_TRENDS_SETUP_RECORD_ID: PawTrendsSetupRecord["id"] = "primary-owner";
+const PAW_TRENDS_BACKUP_STATUS_ID: PawTrendsBackupStatus["id"] =
+  "backup-status";
+
+export const PAW_TRENDS_DATABASE_SCHEMA_VERSION = 6;
+
+const EMPTY_PAW_TRENDS_BACKUP_STATUS: PawTrendsBackupStatus = {
+  id: PAW_TRENDS_BACKUP_STATUS_ID,
+  lastSuccessfulExportAt: null,
+  newTopLevelRecordsSinceExport: 0,
+  schemaVersion: 1,
+};
 
 class PawTrendsProbeDatabase extends Dexie {
+  backupStatus!: Table<PawTrendsBackupStatus, PawTrendsBackupStatus["id"]>;
   dailyCheckIns!: Table<PawTrendsDailyCheckIn, string>;
   dogActivities!: Table<PawTrendsDogActivity, string>;
   moodEntries!: Table<PawTrendsMoodEntry, string>;
@@ -270,8 +305,32 @@ class PawTrendsProbeDatabase extends Dexie {
           );
         }
       });
+    this.version(PAW_TRENDS_DATABASE_SCHEMA_VERSION).stores({
+      backupStatus: "id",
+      dailyCheckIns: "localDate",
+      dogActivities: "id, localDate, startedAt, kind",
+      moodEntries: "id, localDate, [subject+recordedAt]",
+      records: "id",
+      setup: "id",
+    });
   }
 }
+
+const readPawTrendsBackupStatus = async (
+  database: PawTrendsProbeDatabase
+): Promise<PawTrendsBackupStatus> =>
+  (await database.backupStatus.get(PAW_TRENDS_BACKUP_STATUS_ID)) ??
+  EMPTY_PAW_TRENDS_BACKUP_STATUS;
+
+const incrementPawTrendsBackupRecordCount = async (
+  database: PawTrendsProbeDatabase
+) => {
+  const status = await readPawTrendsBackupStatus(database);
+  await database.backupStatus.put({
+    ...status,
+    newTopLevelRecordsSinceExport: status.newTopLevelRecordsSinceExport + 1,
+  });
+};
 
 /** Derives separate encounter counts and severity measures, including zeroes. */
 export const calculatePawTrendsWalkReactionSummary = (
@@ -668,6 +727,7 @@ const updatePawTrendsReusableLabel = async (
 /** Creates the device-local store for setup and the original proof record. */
 export const createPawTrendsProbeStore = (_options?: {
   databaseName?: string;
+  beforeRestoreCommit?: () => Promise<void> | void;
   beforeReusableLabelCommit?: () => Promise<void> | void;
 }): PawTrendsProbeStore => {
   const database = new PawTrendsProbeDatabase(
@@ -675,6 +735,29 @@ export const createPawTrendsProbeStore = (_options?: {
   );
 
   return {
+    deleteAllData: async () => {
+      await database.transaction(
+        "rw",
+        [
+          database.backupStatus,
+          database.dailyCheckIns,
+          database.dogActivities,
+          database.moodEntries,
+          database.records,
+          database.setup,
+        ],
+        async () => {
+          await Promise.all([
+            database.backupStatus.clear(),
+            database.dailyCheckIns.clear(),
+            database.dogActivities.clear(),
+            database.moodEntries.clear(),
+            database.records.clear(),
+            database.setup.clear(),
+          ]);
+        }
+      );
+    },
     deleteReusableLabel: async (category, label) => {
       const setup = await requirePawTrendsSetup(database);
       const savedLabel = findPawTrendsReusableLabel(
@@ -794,12 +877,80 @@ export const createPawTrendsProbeStore = (_options?: {
         (activity): activity is PawTrendsWalk => activity.kind === "walk"
       );
     },
+    markSuccessfulBackupExport: async (exportedAt) => {
+      await database.backupStatus.put({
+        id: PAW_TRENDS_BACKUP_STATUS_ID,
+        lastSuccessfulExportAt: exportedAt,
+        newTopLevelRecordsSinceExport: 0,
+        schemaVersion: 1,
+      });
+    },
     readDailyCheckIn: async (localDate) =>
       (await database.dailyCheckIns.get(localDate)) ?? null,
     readSetupRecord: async () =>
       (await database.setup.get(PAW_TRENDS_SETUP_RECORD_ID)) ?? null,
     readSampleRecord: async () =>
       (await database.records.get(PAW_TRENDS_SAMPLE_RECORD_ID)) ?? null,
+    readBackupStatus: async () => await readPawTrendsBackupStatus(database),
+    readDatabaseSnapshot: async () => {
+      const [
+        backupStatus,
+        dailyCheckIns,
+        dogActivities,
+        moodEntries,
+        probeRecords,
+        setup,
+      ] = await Promise.all([
+        readPawTrendsBackupStatus(database),
+        database.dailyCheckIns.toArray(),
+        database.dogActivities.toArray(),
+        database.moodEntries.toArray(),
+        database.records.toArray(),
+        database.setup.get(PAW_TRENDS_SETUP_RECORD_ID),
+      ]);
+      return {
+        backupStatus,
+        dailyCheckIns,
+        dogActivities,
+        moodEntries,
+        probeRecords,
+        setup: setup ?? null,
+      };
+    },
+    replaceDatabaseSnapshot: async (snapshot) => {
+      await database.transaction(
+        "rw",
+        [
+          database.backupStatus,
+          database.dailyCheckIns,
+          database.dogActivities,
+          database.moodEntries,
+          database.records,
+          database.setup,
+        ],
+        async () => {
+          await Promise.all([
+            database.backupStatus.clear(),
+            database.dailyCheckIns.clear(),
+            database.dogActivities.clear(),
+            database.moodEntries.clear(),
+            database.records.clear(),
+            database.setup.clear(),
+          ]);
+          await Promise.all([
+            database.backupStatus.put(snapshot.backupStatus),
+            database.dailyCheckIns.bulkPut(snapshot.dailyCheckIns),
+            database.dogActivities.bulkPut(snapshot.dogActivities),
+            database.moodEntries.bulkPut(snapshot.moodEntries),
+            database.records.bulkPut(snapshot.probeRecords),
+            snapshot.setup === null
+              ? Promise.resolve()
+              : database.setup.put(snapshot.setup),
+          ]);
+          await _options?.beforeRestoreCommit?.();
+        }
+      );
+    },
     replaceSampleRecord: async (record) => {
       await database.transaction("rw", database.records, async () => {
         await database.records.clear();
@@ -815,7 +966,18 @@ export const createPawTrendsProbeStore = (_options?: {
         id: PAW_TRENDS_SETUP_RECORD_ID,
         schemaVersion: 2,
       };
-      await database.setup.put(setupRecord);
+      const existing = await database.setup.get(PAW_TRENDS_SETUP_RECORD_ID);
+      await database.transaction(
+        "rw",
+        database.setup,
+        database.backupStatus,
+        async () => {
+          await database.setup.put(setupRecord);
+          if (existing === undefined) {
+            await incrementPawTrendsBackupRecordCount(database);
+          }
+        }
+      );
       return setupRecord;
     },
     saveDailyCheckIn: async (localDate, ownerSymptoms) => {
@@ -827,7 +989,17 @@ export const createPawTrendsProbeStore = (_options?: {
         ownerSymptoms: [...new Set(ownerSymptoms)].toSorted(),
         updatedAt: now,
       };
-      await database.dailyCheckIns.put(checkIn);
+      await database.transaction(
+        "rw",
+        database.dailyCheckIns,
+        database.backupStatus,
+        async () => {
+          await database.dailyCheckIns.put(checkIn);
+          if (existing === undefined) {
+            await incrementPawTrendsBackupRecordCount(database);
+          }
+        }
+      );
       return checkIn;
     },
     moveDailyCheckIn: async (
@@ -870,7 +1042,18 @@ export const createPawTrendsProbeStore = (_options?: {
         ...entry,
         id: entry.id ?? crypto.randomUUID(),
       };
-      await database.moodEntries.put(savedEntry);
+      const existing = await database.moodEntries.get(savedEntry.id);
+      await database.transaction(
+        "rw",
+        database.moodEntries,
+        database.backupStatus,
+        async () => {
+          await database.moodEntries.put(savedEntry);
+          if (existing === undefined) {
+            await incrementPawTrendsBackupRecordCount(database);
+          }
+        }
+      );
       return savedEntry;
     },
     saveReusableLabel: async (category, label) => {
@@ -978,7 +1161,17 @@ export const createPawTrendsProbeStore = (_options?: {
         trainingType,
         updatedAt: now,
       };
-      await database.dogActivities.put(savedTraining);
+      await database.transaction(
+        "rw",
+        database.dogActivities,
+        database.backupStatus,
+        async () => {
+          await database.dogActivities.put(savedTraining);
+          if (existing === undefined) {
+            await incrementPawTrendsBackupRecordCount(database);
+          }
+        }
+      );
       return savedTraining;
     },
     // oxlint-disable-next-line eslint/complexity -- Validation keeps corrupt Walk data out of IndexedDB.
@@ -1068,7 +1261,17 @@ export const createPawTrendsProbeStore = (_options?: {
         })),
         updatedAt: now,
       };
-      await database.dogActivities.put(savedWalk);
+      await database.transaction(
+        "rw",
+        database.dogActivities,
+        database.backupStatus,
+        async () => {
+          await database.dogActivities.put(savedWalk);
+          if (existing === undefined) {
+            await incrementPawTrendsBackupRecordCount(database);
+          }
+        }
+      );
       return savedWalk;
     },
     restoreHistoryRecord: async (entry) => {

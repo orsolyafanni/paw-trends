@@ -23,6 +23,7 @@ import type { SyntheticEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { PawTrendsHistory } from "@/features/history/paw-trends-history";
 import { PawTrendsLabelSettings } from "@/features/settings/paw-trends-label-settings";
+import { PawTrendsDataSettings } from "@/features/settings/paw-trends-data-settings";
 import type {
   PawTrendsDailyCheckIn,
   PawTrendsDogActivity,
@@ -388,7 +389,7 @@ interface PawTrendsApplicationShellProps {
   setupRecord: PawTrendsSetupRecord;
   store: PawTrendsProbeStore;
   onNavigate: (screen: PawTrendsAppScreen) => void;
-  onSetupChange: (setup: PawTrendsSetupRecord) => void;
+  onSetupChange: (setup: PawTrendsSetupRecord | null) => void;
 }
 
 function PawTrendsApplicationShell({
@@ -1174,7 +1175,7 @@ function PawTrendsSettings({
   setupRecord,
   store,
 }: {
-  onSetupChange: (setup: PawTrendsSetupRecord) => void;
+  onSetupChange: (setup: PawTrendsSetupRecord | null) => void;
   setupRecord: PawTrendsSetupRecord;
   store: PawTrendsProbeStore;
 }) {
@@ -1190,35 +1191,17 @@ function PawTrendsSettings({
         <h1>Settings</h1>
       </header>
       <PawTrendsLabelSettings
+        onSetupChange={(updatedSetup) => {
+          onSetupChange(updatedSetup);
+        }}
+        setupRecord={setupRecord}
+        store={store}
+      />
+      <PawTrendsDataSettings
         onSetupChange={onSetupChange}
         setupRecord={setupRecord}
         store={store}
       />
-      <section className="paw-settings-list" aria-label="Current setup">
-        <div>
-          <span>Dog</span>
-          <strong>{setupRecord.dogName}</strong>
-        </div>
-        <div>
-          <span>Browser storage</span>
-          <strong>
-            {setupRecord.storageStatus === "granted"
-              ? "Extra protection granted"
-              : "Managed by this browser"}
-          </strong>
-        </div>
-        <div>
-          <span>Data location</span>
-          <strong>This browser only</strong>
-        </div>
-      </section>
-      <aside className="paw-settings-note">
-        <ShieldCheck aria-hidden="true" />
-        <p>
-          Your observation data stays on this device. Backup and restore tools
-          will live here as Paw Trends grows.
-        </p>
-      </aside>
     </main>
   );
 }

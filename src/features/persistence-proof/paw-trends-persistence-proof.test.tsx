@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vite-plus/test";
 
 import { createPawTrendsProbeStore } from "@/persistence/paw-trends-probe-store";
-import type { PawTrendsProbeRecord } from "@/persistence/paw-trends-probe-store";
+import { exportPawTrendsBackup } from "@/backup/paw-trends-backup";
 
 import { PawTrendsPersistenceProof } from "./paw-trends-persistence-proof";
 
@@ -46,21 +46,16 @@ describe("Paw Trends persistence proof", () => {
     ).resolves.toBeVisible();
 
     await user.click(screen.getByRole("button", { name: "Export backup" }));
-    expect(clickSpy).toHaveBeenCalledOnce();
+    await waitFor(() => {
+      expect(clickSpy).toHaveBeenCalledOnce();
+    });
     await expect(screen.findByText("Backup downloaded")).resolves.toBeVisible();
 
-    const restoredRecord: PawTrendsProbeRecord = {
-      id: "owner-sample",
-      note: "Relaxed after mantraing",
-      savedAt: "2026-09-06T09:15:00.000Z",
-      schemaVersion: 1,
-    };
-    const backupJson = JSON.stringify({
-      exportedAt: "2026-09-06T09:20:00.000Z",
-      product: "Paw Trends",
-      records: [restoredRecord],
-      version: 1,
+    const restoreSource = createPawTrendsProbeStore({
+      databaseName: `paw-trends-ui-restore-${crypto.randomUUID()}`,
     });
+    await restoreSource.saveSampleRecord("Relaxed after mantraing");
+    const backupJson = await exportPawTrendsBackup(restoreSource);
     const file = new File([backupJson], "paw-trends-backup.json", {
       type: "application/json",
     });
