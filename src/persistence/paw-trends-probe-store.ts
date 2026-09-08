@@ -1,6 +1,21 @@
 import { Dexie, liveQuery } from "dexie";
 import type { Table } from "dexie";
 
+import { PAW_TRENDS_DOG_MOODS } from "@/domain/paw-trends-moods";
+import type {
+  PawTrendsDogMood,
+  PawTrendsOwnerMood,
+} from "@/domain/paw-trends-moods";
+
+export {
+  PAW_TRENDS_DOG_MOODS,
+  PAW_TRENDS_OWNER_MOODS,
+} from "@/domain/paw-trends-moods";
+export type {
+  PawTrendsDogMood,
+  PawTrendsOwnerMood,
+} from "@/domain/paw-trends-moods";
+
 const PAW_TRENDS_PROBE_DATABASE = "paw-trends-local";
 
 export const PAW_TRENDS_REUSABLE_LABEL_CATEGORIES = [
@@ -54,27 +69,6 @@ export interface PawTrendsProbeRecord {
   schemaVersion: 1;
 }
 
-export const PAW_TRENDS_DOG_MOODS = [
-  "Playful",
-  "Sleepy",
-  "Grumpy",
-  "Hate-the-world",
-  "Overwhelmed",
-  "Tense",
-  "Aggressive",
-] as const;
-
-export const PAW_TRENDS_OWNER_MOODS = [
-  "Good",
-  "Relaxed",
-  "Anxious",
-  "Moody",
-  "Sad",
-  "Stressed",
-] as const;
-
-export type PawTrendsDogMood = (typeof PAW_TRENDS_DOG_MOODS)[number];
-export type PawTrendsOwnerMood = (typeof PAW_TRENDS_OWNER_MOODS)[number];
 export type PawTrendsMoodSubject = "dog" | "owner";
 
 export interface PawTrendsMoodEntry {

@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
@@ -178,5 +178,55 @@ describe("Pattern data readiness", () => {
       screen.getByText(/Each Factor still needs enough variation/iu)
     ).toBeVisible();
     expect(screen.queryByText(/strongest|ranking/iu)).not.toBeInTheDocument();
+  });
+
+  it("shows transparent eligible Association cards and filters the global top ten", async () => {
+    const store = await createReadyPawTrendsStore();
+    await Promise.all(
+      Array.from({ length: 10 }, async (_, index) => {
+        await store.saveWalk({
+          activityMood: index < 5 ? "Playful" : "Tense",
+          company: [],
+          dogSymptoms: [],
+          durationMinutes: index < 5 ? 60 : 20,
+          localDate: `2026-08-${String(index + 1).padStart(2, "0")}`,
+          place: index < 5 ? "Lake11" : "Home route",
+          startedAt: `2026-08-${String(index + 1).padStart(2, "0")}T08:00:00.000Z`,
+          triggerEncounters: [],
+        });
+      })
+    );
+
+    render(<PawTrendsPatternReadinessScreen store={store} />);
+
+    await expect(
+      screen.findByRole("heading", { name: "Strongest activity Associations" })
+    ).resolves.toBeVisible();
+    expect(screen.getAllByText("Association, not causation.")).not.toHaveLength(
+      0
+    );
+    expect(screen.getAllByText("Walk duration")).not.toHaveLength(0);
+    expect(screen.getAllByText("5 Walks")).not.toHaveLength(0);
+    expect(screen.getAllByText(/\+40 minutes/iu)).not.toHaveLength(0);
+    expect(
+      screen.getAllByText(/Ranked by absolute Pearson r/iu)
+    ).not.toHaveLength(0);
+    expect(
+      screen.getAllByRole("meter", { name: /normalized strength/iu })
+    ).not.toHaveLength(0);
+
+    fireEvent.change(screen.getByLabelText("Dog Mood"), {
+      target: { value: "Tense" },
+    });
+    expect(screen.getByLabelText("Rank 2")).toBeVisible();
+
+    fireEvent.change(screen.getByLabelText("Dog Mood"), {
+      target: { value: "Aggressive" },
+    });
+    expect(
+      screen.getByRole("heading", {
+        name: "No eligible Association for Aggressive yet.",
+      })
+    ).toBeVisible();
   });
 });
