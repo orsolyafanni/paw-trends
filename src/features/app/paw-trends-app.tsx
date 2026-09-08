@@ -22,6 +22,7 @@ import type { SyntheticEvent } from "react";
 
 import { Button } from "@/components/ui/button";
 import { PawTrendsHistory } from "@/features/history/paw-trends-history";
+import { PawTrendsPatternReadinessScreen } from "@/features/patterns/paw-trends-pattern-readiness";
 import { PawTrendsLabelSettings } from "@/features/settings/paw-trends-label-settings";
 import { PawTrendsDataSettings } from "@/features/settings/paw-trends-data-settings";
 import type {
@@ -69,14 +70,6 @@ const PAW_TRENDS_NAVIGATION: readonly {
   { icon: Sparkles, label: "Patterns", screen: "patterns" },
   { icon: Settings, label: "Settings", screen: "settings" },
 ];
-
-const EMPTY_SCREEN_COPY = {
-  patterns: {
-    description:
-      "Paw Trends will show data-readiness counts before any Associations qualify.",
-    title: "Patterns need a little history.",
-  },
-};
 
 const cloneSeededReusableLabels = (): PawTrendsReusableLabels => ({
   Company: [...PAW_TRENDS_SEEDED_REUSABLE_LABELS.Company],
@@ -415,7 +408,7 @@ function PawTrendsApplicationShell({
       />
     );
   } else {
-    screenContent = <PawTrendsEmptyScreen />;
+    screenContent = <PawTrendsPatternReadinessScreen store={store} />;
   }
 
   return (
@@ -1144,29 +1137,6 @@ function PawTrendsMoodEntryCard({
         </button>
       </div>
     </article>
-  );
-}
-
-function PawTrendsEmptyScreen() {
-  const copy = EMPTY_SCREEN_COPY.patterns;
-
-  return (
-    <main className="paw-app-content paw-secondary-screen">
-      <header>
-        <div className="paw-brand-lockup paw-brand-lockup-compact">
-          <span className="paw-brand-mark" aria-hidden="true">
-            <PawPrint />
-          </span>
-          <span>Paw Trends</span>
-        </div>
-        <h1>Patterns</h1>
-      </header>
-      <section className="paw-secondary-empty">
-        <Sparkles aria-hidden="true" />
-        <h2>{copy.title}</h2>
-        <p>{copy.description}</p>
-      </section>
-    </main>
   );
 }
 

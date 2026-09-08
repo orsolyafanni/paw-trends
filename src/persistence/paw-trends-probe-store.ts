@@ -1,4 +1,4 @@
-import { Dexie } from "dexie";
+import { Dexie, liveQuery } from "dexie";
 import type { Table } from "dexie";
 
 const PAW_TRENDS_PROBE_DATABASE = "paw-trends-local";
@@ -183,6 +183,10 @@ export interface PawTrendsProbeStore {
   deleteMoodEntry: (id: string) => Promise<void>;
   deleteHistoryRecord: (entry: PawTrendsHistoryRecord) => Promise<void>;
   listHistoryRecords: () => Promise<PawTrendsHistoryRecord[]>;
+  observeHistoryRecords: (
+    onRecords: (records: PawTrendsHistoryRecord[]) => void,
+    onError: (error: unknown) => void
+  ) => () => void;
   listMoodEntriesForDate: (localDate: string) => Promise<PawTrendsMoodEntry[]>;
   listRecentTriggerLabels: (limit: number) => Promise<string[]>;
   listReusableLabelReferences: (
@@ -562,6 +566,26 @@ const listPawTrendsReusableLabelReferences = async (
   );
 };
 
+const listPawTrendsHistoryRecords = async (
+  database: PawTrendsProbeDatabase
+): Promise<PawTrendsHistoryRecord[]> => {
+  const [dailyCheckIns, moodEntries, dogActivities] = await Promise.all([
+    database.dailyCheckIns.toArray(),
+    database.moodEntries.toArray(),
+    database.dogActivities.toArray(),
+  ]);
+  return [
+    ...dailyCheckIns.map((record) => ({ kind: "check-in" as const, record })),
+    ...moodEntries.map((record) => ({ kind: "mood" as const, record })),
+    ...dogActivities.map(
+      (record): PawTrendsHistoryRecord =>
+        record.kind === "walk"
+          ? { kind: "walk", record }
+          : { kind: "training", record }
+    ),
+  ];
+};
+
 const replacePawTrendsActivityLabel = (
   activity: PawTrendsDogActivity,
   category: PawTrendsReusableLabelCategory,
@@ -803,25 +827,14 @@ export const createPawTrendsProbeStore = (_options?: {
         await database.dogActivities.delete(entry.record.id);
       }
     },
-    listHistoryRecords: async () => {
-      const [dailyCheckIns, moodEntries, dogActivities] = await Promise.all([
-        database.dailyCheckIns.toArray(),
-        database.moodEntries.toArray(),
-        database.dogActivities.toArray(),
-      ]);
-      return [
-        ...dailyCheckIns.map((record) => ({
-          kind: "check-in" as const,
-          record,
-        })),
-        ...moodEntries.map((record) => ({ kind: "mood" as const, record })),
-        ...dogActivities.map(
-          (record): PawTrendsHistoryRecord =>
-            record.kind === "walk"
-              ? { kind: "walk", record }
-              : { kind: "training", record }
-        ),
-      ];
+    listHistoryRecords: async () => await listPawTrendsHistoryRecords(database),
+    observeHistoryRecords: (onRecords, onError) => {
+      const subscription = liveQuery(
+        async () => await listPawTrendsHistoryRecords(database)
+      ).subscribe({ error: onError, next: onRecords });
+      return () => {
+        subscription.unsubscribe();
+      };
     },
     listMoodEntriesForDate: async (localDate) =>
       await database.moodEntries
