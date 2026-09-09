@@ -88,6 +88,7 @@ export default defineConfig({
   test: {
     environment: "jsdom",
     exclude: ["tests/browser/**"],
+    fileParallelism: false,
     include: ["src/**/*.test.{ts,tsx}"],
     setupFiles: ["./src/test/paw-trends-test-setup.ts"],
   },

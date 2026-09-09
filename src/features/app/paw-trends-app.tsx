@@ -997,17 +997,19 @@ function PawTrendsCheckInEditor({
 
   useEffect(() => {
     let isCurrent = true;
-    const loadCheckIn = async () => {
-      const savedCheckIn = await store.readDailyCheckIn(checkInDate);
-      if (isCurrent) {
-        setSelectedSymptoms(savedCheckIn?.ownerSymptoms ?? []);
-      }
-    };
-    void loadCheckIn();
+    if (checkInDate !== initialDate) {
+      const loadCheckIn = async () => {
+        const savedCheckIn = await store.readDailyCheckIn(checkInDate);
+        if (isCurrent) {
+          setSelectedSymptoms(savedCheckIn?.ownerSymptoms ?? []);
+        }
+      };
+      void loadCheckIn();
+    }
     return () => {
       isCurrent = false;
     };
-  }, [checkInDate, store]);
+  }, [checkInDate, initialDate, store]);
 
   const toggleSymptom = (symptom: string) => {
     setSelectedSymptoms((current) =>
@@ -1015,6 +1017,13 @@ function PawTrendsCheckInEditor({
         ? current.filter((item) => item !== symptom)
         : [...current, symptom]
     );
+  };
+
+  const selectCheckInDate = (nextDate: string) => {
+    setCheckInDate(nextDate);
+    if (nextDate === initialDate) {
+      setSelectedSymptoms(initialCheckIn?.ownerSymptoms ?? []);
+    }
   };
 
   return (
@@ -1045,7 +1054,7 @@ function PawTrendsCheckInEditor({
           type="date"
           value={checkInDate}
           onChange={(event) => {
-            setCheckInDate(event.target.value);
+            selectCheckInDate(event.target.value);
           }}
         />
       </label>

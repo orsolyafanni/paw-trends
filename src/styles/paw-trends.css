@@ -96,6 +96,17 @@ textarea {
 }
 
 button,
+[role="button"] {
+  min-width: 44px;
+  min-height: 44px;
+}
+
+input:not([type="checkbox"]):not([type="radio"]),
+select {
+  min-height: 44px;
+}
+
+button,
 input,
 label {
   -webkit-tap-highlight-color: transparent;

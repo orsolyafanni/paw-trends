@@ -4,7 +4,7 @@ export default defineConfig({
   fullyParallel: false,
   projects: [
     {
-      name: "iPhone-sized browser",
+      name: "Mobile Safari emulation",
       use: { ...devices["iPhone 15"], browserName: "chromium" },
     },
   ],
