@@ -7,6 +7,7 @@ import {
 } from "@/persistence/paw-trends-probe-store";
 import type {
   PawTrendsDogMood,
+  PawTrendsMoodEntry,
   PawTrendsProbeStore,
 } from "@/persistence/paw-trends-probe-store";
 
@@ -200,7 +201,7 @@ describe("Pattern data readiness", () => {
     render(<PawTrendsPatternReadinessScreen store={store} />);
 
     await expect(
-      screen.findByRole("heading", { name: "Strongest activity Associations" })
+      screen.findByRole("heading", { name: "Strongest Associations" })
     ).resolves.toBeVisible();
     expect(screen.getAllByText("Association, not causation.")).not.toHaveLength(
       0
@@ -228,5 +229,65 @@ describe("Pattern data readiness", () => {
         name: "No eligible Association for Aggressive yet.",
       })
     ).toBeVisible();
+  });
+
+  it("shows Daily Mood Presence Associations and recomputes them from raw days", async () => {
+    const store = await createReadyPawTrendsStore();
+    await store.saveReusableLabel("Owner Symptom", "Migraine");
+    await store.saveReusableLabel("Owner Symptom", "Headache");
+    const dates = Array.from({ length: 10 }, (_, index) =>
+      new Date(Date.UTC(2026, 0, 1 + index * 8)).toISOString().slice(0, 10)
+    );
+    const moodEntries: PawTrendsMoodEntry[] = await Promise.all(
+      dates.map(
+        async (date, index) =>
+          await store.saveMoodEntry({
+            localDate: date,
+            mood: index < 5 ? "Playful" : "Tense",
+            recordedAt: `${date}T09:00:00.000Z`,
+            subject: "dog",
+          })
+      )
+    );
+    await Promise.all(
+      dates.map(
+        async (date, index) =>
+          await store.saveDailyCheckIn(date, index < 5 ? ["Migraine"] : [])
+      )
+    );
+
+    render(<PawTrendsPatternReadinessScreen store={store} />);
+
+    await expect(
+      screen.findByRole("heading", { name: "Strongest Associations" })
+    ).resolves.toBeVisible();
+    expect(screen.getAllByText("Owner Symptom = Migraine")).not.toHaveLength(0);
+    expect(
+      screen.getAllByText("Across the 7-day Factor Window")
+    ).not.toHaveLength(0);
+    expect(
+      screen.getAllByText(/See the 10 Observed Days that counted/iu)
+    ).not.toHaveLength(0);
+
+    await store.saveDailyCheckIn(moodEntries[0].localDate, []);
+    await expect
+      .poll(() => screen.queryAllByText(/\+0\.8 days/iu).length)
+      .toBeGreaterThan(0);
+
+    await store.mergeReusableLabels("Owner Symptom", "Migraine", "Headache");
+    await expect(
+      screen.findAllByText("Owner Symptom = Headache")
+    ).resolves.not.toHaveLength(0);
+
+    await store.deleteMoodEntry(moodEntries[9].id);
+    await expect(
+      screen.findByRole("heading", {
+        name: "Your record is taking shape.",
+      })
+    ).resolves.toBeVisible();
+    await store.restoreHistoryRecord({ kind: "mood", record: moodEntries[9] });
+    await expect(
+      screen.findByRole("heading", { name: "Strongest Associations" })
+    ).resolves.toBeVisible();
   });
 });

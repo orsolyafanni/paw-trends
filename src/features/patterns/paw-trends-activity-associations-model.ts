@@ -40,6 +40,7 @@ export interface PawTrendsAssociationSample {
   activityMood: PawTrendsDogMood;
   factorValue: number;
   localDate: string;
+  sampleKind: "activity";
   startedAt: string;
 }
 
@@ -60,6 +61,7 @@ export interface PawTrendsActivityAssociation {
   direction: "negative" | "positive" | "zero";
   factor: string;
   factorKind: "binary" | "numeric";
+  level: "activity";
   mood: PawTrendsDogMood;
   pearsonR: number;
   samples: PawTrendsAssociationSample[];
@@ -77,8 +79,8 @@ interface PawTrendsActivityFactor {
   unit: string;
 }
 
-const PAW_TRENDS_MINIMUM_SIDE_SAMPLES = 5;
-const PAW_TRENDS_MAXIMUM_ASSOCIATIONS = 10;
+export const PAW_TRENDS_MINIMUM_ASSOCIATION_SIDE_SAMPLES = 5;
+export const PAW_TRENDS_MAXIMUM_ASSOCIATIONS = 10;
 
 const meanPawTrendsValues = (values: readonly number[]): number =>
   values.reduce((sum, value) => sum + value, 0) / values.length;
@@ -342,9 +344,10 @@ const createPawTrendsAssociation = (
   const moodSampleSize = outcomeValues.filter((value) => value === 1).length;
   const withoutMoodSampleSize = outcomeValues.length - moodSampleSize;
   if (
-    matchingActivities.length < PAW_TRENDS_MINIMUM_SIDE_SAMPLES * 2 ||
-    moodSampleSize < PAW_TRENDS_MINIMUM_SIDE_SAMPLES ||
-    withoutMoodSampleSize < PAW_TRENDS_MINIMUM_SIDE_SAMPLES
+    matchingActivities.length <
+      PAW_TRENDS_MINIMUM_ASSOCIATION_SIDE_SAMPLES * 2 ||
+    moodSampleSize < PAW_TRENDS_MINIMUM_ASSOCIATION_SIDE_SAMPLES ||
+    withoutMoodSampleSize < PAW_TRENDS_MINIMUM_ASSOCIATION_SIDE_SAMPLES
   ) {
     return undefined;
   }
@@ -354,8 +357,9 @@ const createPawTrendsAssociation = (
       (value) => value === 1
     ).length;
     if (
-      presentSampleSize < PAW_TRENDS_MINIMUM_SIDE_SAMPLES ||
-      factorValues.length - presentSampleSize < PAW_TRENDS_MINIMUM_SIDE_SAMPLES
+      presentSampleSize < PAW_TRENDS_MINIMUM_ASSOCIATION_SIDE_SAMPLES ||
+      factorValues.length - presentSampleSize <
+        PAW_TRENDS_MINIMUM_ASSOCIATION_SIDE_SAMPLES
     ) {
       return undefined;
     }
@@ -376,6 +380,7 @@ const createPawTrendsAssociation = (
     activityMood: activity.activityMood,
     factorValue: factorValues[index],
     localDate: activity.localDate,
+    sampleKind: "activity" as const,
     startedAt: activity.startedAt,
   }));
   let comparison: PawTrendsActivityAssociation["comparison"];
@@ -441,6 +446,7 @@ const createPawTrendsAssociation = (
     direction,
     factor: factor.label,
     factorKind: factor.factorKind,
+    level: "activity",
     mood,
     pearsonR,
     samples,
@@ -453,18 +459,14 @@ const createPawTrendsAssociation = (
   };
 };
 
-/** Returns the ten strongest eligible activity-level Associations from plain activity records. */
-export function calculatePawTrendsActivityAssociations(
-  activities: readonly PawTrendsPlainActivity[]
-): PawTrendsActivityAssociation[] {
-  const factors = createPawTrendsActivityFactors(activities);
-  const associations = factors.flatMap((factor) =>
-    PAW_TRENDS_DOG_MOODS.flatMap((mood) => {
-      const association = createPawTrendsAssociation(activities, factor, mood);
-      return association === undefined ? [] : [association];
-    })
-  );
-
+/** Sorts eligible Associations by strength, sample size, and stable key, then keeps ten. */
+export function rankPawTrendsAssociationCandidates<
+  Association extends {
+    samples: readonly unknown[];
+    stableKey: string;
+    strength: number;
+  },
+>(associations: readonly Association[]): Association[] {
   return associations
     .toSorted(
       (left, right) =>
@@ -473,4 +475,26 @@ export function calculatePawTrendsActivityAssociations(
         left.stableKey.localeCompare(right.stableKey, "en-US")
     )
     .slice(0, PAW_TRENDS_MAXIMUM_ASSOCIATIONS);
+}
+
+/** Returns every eligible activity-level Association before the global top-ten ranking. */
+export function calculatePawTrendsActivityAssociationCandidates(
+  activities: readonly PawTrendsPlainActivity[]
+): PawTrendsActivityAssociation[] {
+  const factors = createPawTrendsActivityFactors(activities);
+  return factors.flatMap((factor) =>
+    PAW_TRENDS_DOG_MOODS.flatMap((mood) => {
+      const association = createPawTrendsAssociation(activities, factor, mood);
+      return association === undefined ? [] : [association];
+    })
+  );
+}
+
+/** Returns the ten strongest eligible activity-level Associations from plain activity records. */
+export function calculatePawTrendsActivityAssociations(
+  activities: readonly PawTrendsPlainActivity[]
+): PawTrendsActivityAssociation[] {
+  return rankPawTrendsAssociationCandidates(
+    calculatePawTrendsActivityAssociationCandidates(activities)
+  );
 }

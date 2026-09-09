@@ -23,8 +23,8 @@ import type {
 import { PAW_TRENDS_DOG_MOODS } from "@/persistence/paw-trends-probe-store";
 
 import { calculatePawTrendsPatternReadiness } from "./paw-trends-pattern-readiness-model";
-import { calculatePawTrendsActivityAssociations } from "./paw-trends-activity-associations-model";
-import type { PawTrendsActivityAssociation } from "./paw-trends-activity-associations-model";
+import { calculatePawTrendsAssociations } from "./paw-trends-weekly-associations-model";
+import type { PawTrendsAssociation } from "./paw-trends-weekly-associations-model";
 
 const PAW_TRENDS_PATTERN_COUNTS = [
   { icon: CalendarDays, key: "observedDays", label: "Observed Days" },
@@ -65,29 +65,42 @@ export function PawTrendsPatternReadinessScreen({
     () => calculatePawTrendsPatternReadiness(records ?? []),
     [records]
   );
-  const activityAssociations = useMemo(
-    () =>
-      calculatePawTrendsActivityAssociations(
-        (records ?? [])
-          .filter(
-            (
-              entry
-            ): entry is Extract<
-              PawTrendsHistoryRecord,
-              { kind: "training" | "walk" }
-            > => entry.kind === "training" || entry.kind === "walk"
-          )
-          .map((entry) => entry.record)
-      ),
-    [records]
-  );
-  const visibleAssociations = activityAssociations
+  const associations = useMemo(() => {
+    const historyRecords = records ?? [];
+    return calculatePawTrendsAssociations({
+      activities: historyRecords
+        .filter(
+          (
+            entry
+          ): entry is Extract<
+            PawTrendsHistoryRecord,
+            { kind: "training" | "walk" }
+          > => entry.kind === "training" || entry.kind === "walk"
+        )
+        .map((entry) => entry.record),
+      checkIns: historyRecords
+        .filter(
+          (
+            entry
+          ): entry is Extract<PawTrendsHistoryRecord, { kind: "check-in" }> =>
+            entry.kind === "check-in"
+        )
+        .map((entry) => entry.record),
+      moodEntries: historyRecords
+        .filter(
+          (entry): entry is Extract<PawTrendsHistoryRecord, { kind: "mood" }> =>
+            entry.kind === "mood"
+        )
+        .map((entry) => entry.record),
+    });
+  }, [records]);
+  const visibleAssociations = associations
     .map((association, index) => ({ association, rank: index + 1 }))
     .filter(
       ({ association }) =>
         moodFilter === "all" || association.mood === moodFilter
     );
-  const hasEligibleAssociations = activityAssociations.length > 0;
+  const hasEligibleAssociations = associations.length > 0;
   const hasObservations = readiness.totalRecords > 0;
   let readinessTitle = "Start with what happened.";
   let readinessDescription =
@@ -114,7 +127,7 @@ export function PawTrendsPatternReadinessScreen({
         <h1>Patterns</h1>
         <p>
           {hasEligibleAssociations
-            ? "Review the strongest eligible comparisons in your activities."
+            ? "Review the strongest eligible comparisons across activities and Observed Days."
             : "See what you have recorded and when comparisons can begin."}
         </p>
       </header>
@@ -127,10 +140,10 @@ export function PawTrendsPatternReadinessScreen({
       ) : null}
 
       {hasEligibleAssociations ? (
-        <PawTrendsActivityAssociationList
+        <PawTrendsAssociationList
           associations={visibleAssociations}
           moodFilter={moodFilter}
-          totalAssociations={activityAssociations.length}
+          totalAssociations={associations.length}
           onMoodFilterChange={setMoodFilter}
         />
       ) : (
@@ -209,6 +222,11 @@ export function PawTrendsPatternReadinessScreen({
           Association can be a coincidence, and it never shows that a Factor
           caused a Dog Mood.
         </p>
+        <p>
+          An Observed Day uses that date and the six preceding local calendar
+          days. Paw Trends assumes all observations were logged. Training
+          recency excludes days before that Training Type first appears.
+        </p>
       </aside>
     </main>
   );
@@ -216,7 +234,7 @@ export function PawTrendsPatternReadinessScreen({
 
 function formatPawTrendsAssociationValue(
   value: number,
-  association: PawTrendsActivityAssociation
+  association: PawTrendsAssociation
 ): string {
   if (association.comparison.format === "percentage") {
     return `${Math.round(value)}%`;
@@ -234,7 +252,7 @@ function isPawTrendsDogMoodFilter(
 }
 
 function formatPawTrendsAssociationDifference(
-  association: PawTrendsActivityAssociation
+  association: PawTrendsAssociation
 ): string {
   const { difference } = association.comparison;
   const prefix = difference > 0 ? "+" : "";
@@ -245,7 +263,7 @@ function formatPawTrendsAssociationDifference(
 }
 
 function formatPawTrendsAssociationSampleValue(
-  association: PawTrendsActivityAssociation,
+  association: PawTrendsAssociation,
   factorValue: number
 ): string {
   if (association.factorKind === "binary") {
@@ -265,7 +283,7 @@ function formatPawTrendsPearsonR(value: number): string {
 }
 
 function getPawTrendsAssociationDirectionCopy(
-  association: PawTrendsActivityAssociation
+  association: PawTrendsAssociation
 ): string {
   if (association.direction === "positive") {
     return `${association.factor} was higher or more common with ${association.mood}.`;
@@ -276,14 +294,14 @@ function getPawTrendsAssociationDirectionCopy(
   return `${association.factor} had no linear direction with ${association.mood}.`;
 }
 
-function PawTrendsActivityAssociationList({
+function PawTrendsAssociationList({
   associations,
   moodFilter,
   totalAssociations,
   onMoodFilterChange,
 }: {
   associations: readonly {
-    association: PawTrendsActivityAssociation;
+    association: PawTrendsAssociation;
     rank: number;
   }[];
   moodFilter: "all" | PawTrendsDogMood;
@@ -291,18 +309,14 @@ function PawTrendsActivityAssociationList({
   onMoodFilterChange: (mood: "all" | PawTrendsDogMood) => void;
 }) {
   return (
-    <section
-      className="paw-associations"
-      aria-labelledby="activity-associations-title"
-    >
+    <section className="paw-associations" aria-labelledby="associations-title">
       <div className="paw-associations-heading">
         <div>
-          <h2 id="activity-associations-title">
-            Strongest activity Associations
-          </h2>
+          <h2 id="associations-title">Strongest Associations</h2>
           <p>
-            {totalAssociations} eligible comparison
-            {totalAssociations === 1 ? "" : "s"}, ranked by Pearson |r|.
+            Showing {totalAssociations} strongest eligible comparison
+            {totalAssociations === 1 ? "" : "s"} across activities and Observed
+            Days, ranked by Pearson |r|.
           </p>
         </div>
         <label className="paw-association-filter">
@@ -336,7 +350,7 @@ function PawTrendsActivityAssociationList({
       ) : (
         <div className="paw-association-list">
           {associations.map(({ association, rank }) => (
-            <PawTrendsActivityAssociationCard
+            <PawTrendsAssociationCard
               association={association}
               key={association.stableKey}
               rank={rank}
@@ -348,11 +362,11 @@ function PawTrendsActivityAssociationList({
   );
 }
 
-function PawTrendsActivityAssociationCard({
+function PawTrendsAssociationCard({
   association,
   rank,
 }: {
-  association: PawTrendsActivityAssociation;
+  association: PawTrendsAssociation;
   rank: number;
 }) {
   let DirectionIcon = Minus;
@@ -361,7 +375,12 @@ function PawTrendsActivityAssociationCard({
   } else if (association.direction === "negative") {
     DirectionIcon = ArrowDownRight;
   }
-  const activityLabel = association.samples[0]?.activityKind ?? "Activity";
+  const sampleLabel =
+    association.level === "day"
+      ? "Observed Day"
+      : (association.samples[0]?.activityKind ?? "Activity");
+  const outcomeLabel =
+    association.level === "day" ? "Daily Mood Presence" : "Activity Mood";
 
   return (
     <article className="paw-association-card">
@@ -373,7 +392,7 @@ function PawTrendsActivityAssociationCard({
           <span>{association.timeRelationship}</span>
           <h3>{association.factor}</h3>
           <p>
-            paired with <strong>{association.mood}</strong> Activity Mood
+            paired with <strong>{association.mood}</strong> {outcomeLabel}
           </p>
         </div>
         <div
@@ -386,29 +405,47 @@ function PawTrendsActivityAssociationCard({
 
       <details className="paw-association-details">
         <summary>
-          See the {association.samples.length} {activityLabel}
+          See the {association.samples.length} {sampleLabel}
           {association.samples.length === 1 ? "" : "s"} that counted
           <ChevronDown aria-hidden="true" />
         </summary>
         <section
-          aria-label={`${association.factor} activities that counted`}
+          aria-label={`${association.factor} ${association.level === "day" ? "days" : "activities"} that counted`}
           className="paw-association-sample-list"
           tabIndex={0}
         >
           <ul>
-            {association.samples.map((sample) => (
-              <li key={sample.activityId}>
-                <time dateTime={sample.startedAt}>{sample.localDate}</time>
-                <span>{sample.activityMood}</span>
-                <span>
-                  Factor value{" "}
-                  {formatPawTrendsAssociationSampleValue(
-                    association,
-                    sample.factorValue
-                  )}
-                </span>
-              </li>
-            ))}
+            {association.samples.map((sample) => {
+              const sampleKey =
+                sample.sampleKind === "activity"
+                  ? sample.activityId
+                  : sample.localDate;
+              return (
+                <li key={sampleKey}>
+                  <time
+                    dateTime={
+                      sample.sampleKind === "activity"
+                        ? sample.startedAt
+                        : sample.localDate
+                    }
+                  >
+                    {sample.localDate}
+                  </time>
+                  <span>
+                    {sample.sampleKind === "activity"
+                      ? sample.activityMood
+                      : `${association.mood} ${sample.moodPresent ? "present" : "absent"}`}
+                  </span>
+                  <span>
+                    Factor value{" "}
+                    {formatPawTrendsAssociationSampleValue(
+                      association,
+                      sample.factorValue
+                    )}
+                  </span>
+                </li>
+              );
+            })}
           </ul>
         </section>
       </details>
@@ -442,7 +479,7 @@ function PawTrendsActivityAssociationCard({
             )}
           </strong>
           <small>
-            {association.comparison.left.sampleSize} {activityLabel}
+            {association.comparison.left.sampleSize} {sampleLabel}
             {association.comparison.left.sampleSize === 1 ? "" : "s"}
           </small>
         </div>
@@ -459,7 +496,7 @@ function PawTrendsActivityAssociationCard({
             )}
           </strong>
           <small>
-            {association.comparison.right.sampleSize} {activityLabel}
+            {association.comparison.right.sampleSize} {sampleLabel}
             {association.comparison.right.sampleSize === 1 ? "" : "s"}
           </small>
         </div>
@@ -468,10 +505,23 @@ function PawTrendsActivityAssociationCard({
       <footer>
         <p>
           Ranked by absolute Pearson r, then sample size. Small personal samples
-          can surface coincidences.
+          can surface coincidences.{" "}
+          {getPawTrendsAssociationAssumption(association)}
         </p>
         <strong>Association, not causation.</strong>
       </footer>
     </article>
   );
+}
+
+function getPawTrendsAssociationAssumption(
+  association: PawTrendsAssociation
+): string {
+  if (association.timeRelationship === "Training recency") {
+    return "Observed Days before the first matching Training are excluded.";
+  }
+  if (association.level === "day") {
+    return "Each window includes the Observed Day and six preceding local dates and assumes all observations were logged.";
+  }
+  return "Each activity is one sample.";
 }

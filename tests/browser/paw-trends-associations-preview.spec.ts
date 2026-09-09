@@ -143,7 +143,7 @@ async function seedPawTrendsAssociationPreview(page: Page) {
   await page.reload();
   await page.getByRole("button", { name: "Patterns" }).click();
   await expect(
-    page.getByRole("heading", { name: "Strongest activity Associations" })
+    page.getByRole("heading", { name: "Strongest Associations" })
   ).toBeVisible();
 }
 
