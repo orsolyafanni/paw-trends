@@ -29,7 +29,7 @@ A few choices shape the first version:
 - The primary experience is designed for an owner logging observations on an iPhone.
 - JSON backup and restore reduce the risk of keeping data on one device and browser.
 
-The project is a work in progress. The [product document](./PRODUCT.md) describes the intended version 1 experience and its boundaries.
+Paw Trends v1 is complete and released as an owner-only ChatGPT Site. The [product document](./PRODUCT.md) records the version 1 scope and its boundaries.
 
 ## Repository guide
 
